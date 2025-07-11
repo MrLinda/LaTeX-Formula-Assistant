@@ -222,7 +222,7 @@ async function callCustomAPI(base64Data) {
             latexCode = latexCode.replace(/^\s*\$\$[\r\n]*|[\r\n]*\$\$\s*$/g, '');
 
             // 使用正则表达式匹配并删除首尾的```latex```代码块标记
-            latexCode = latexCode.replace(/^\s*```latex[\r\n]*|[\r\n]*```latex\s*$/g, '');
+            latexCode = latexCode.replace(/^\s*```latex[\r\n]*|[\r\n]*```\s*$/g, '');
 
             // 更新输入框和渲染
             document.getElementById('latexInput').value = latexCode;
