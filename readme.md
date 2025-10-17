@@ -9,6 +9,7 @@ LaTeX公式识别助手是一个基于多模态大模型的工具，能够高效
 - **多模型支持**：支持Qwen2.5-VL-32B-Instruct和Qwen2.5-VL-7B-Instruct等模型。
 - **MathML转换**：一键将LaTeX公式转换为MathML格式，方便在Word中使用。
 - **API密钥管理**：支持本地保存API密钥，方便下次使用。
+- **模型配置独立化**：模型配置已独立到单独的config.js文件中，便于管理和扩展。
 
 ## 使用方法
 ### 安装
@@ -24,6 +25,40 @@ LaTeX公式识别助手是一个基于多模态大模型的工具，能够高效
 2. 等待片刻，系统会自动识别公式并生成LaTeX代码。
 3. 在右侧查看和编辑LaTeX代码，预览公式效果。
 4. 点击“复制MathML”按钮，将公式转换为MathML格式并复制到剪贴板。
+
+## 模型配置说明
+
+为了便于管理和扩展，模型配置已独立到单独的 `config.js` 文件中。
+
+### 配置文件结构
+
+```javascript
+const modelConfig = {
+    "模型标识符": {
+        name: "实际模型名称",
+        displayName: "显示名称"
+    }
+};
+```
+
+### 添加新模型
+
+只需在 `modelConfig` 对象中添加新的模型配置即可，系统会自动在界面中显示。
+
+### 示例
+
+```javascript
+const modelConfig = {
+    "Qwen2.5-VL-32B": {
+        name: "Qwen/Qwen2.5-VL-32B-Instruct",
+        displayName: "Qwen2.5-VL-32B"
+    },
+    "Qwen2.5-VL-7B": {
+        name: "Pro/Qwen/Qwen2.5-VL-7B-Instruct",
+        displayName: "Qwen2.5-VL-7B"
+    },
+};
+```
 
 ## 依赖项
 - **Bootstrap**：用于页面布局和样式。

@@ -20,22 +20,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // 监听复制MathML按钮
     document.getElementById('copyMathMLButton').addEventListener('click', copyMathML);
 
+    // 初始化模型选择下拉框
+    if (typeof generateModelOptions === 'function') {
+        generateModelOptions();
+    }
+
     // 初始化Temml渲染
     renderLaTeX();
 
     // 尝试从本地存储加载API密钥
     loadApiKey();
 });
-
-// 模型配置
-modelConfig = {
-    "Qwen2.5-VL-32B": {
-        name: "Qwen/Qwen2.5-VL-32B-Instruct",
-    },
-    "Qwen2.5-VL-7B": {
-        name: "Pro/Qwen/Qwen2.5-VL-7B-Instruct",
-    },
-}
 
 // 保存API密钥
 function saveApiKey() {

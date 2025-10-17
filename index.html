@@ -8,6 +8,8 @@
 
     <!-- 添加 Temml.js -->
     <script src="./temml/dist/temml.min.js"></script>
+    <!-- 添加模型配置文件 -->
+    <script src="config.js"></script>
 
     <style>
         .formula-display {
@@ -60,9 +62,7 @@
                         <div class="mt-3">
                             <label for="modelSelect" class="form-label">选择模型</label>
                             <select id="modelSelect" class="form-select">
-                                <option value="Qwen2.5-VL-7B">Qwen2.5-VL-7B</option>
-                                <option value="Qwen2.5-VL-32B">Qwen2.5-VL-32B</option>
-                                <option value="other" disabled>待添加</option>
+                                <!-- 选项将通过JavaScript动态生成 -->
                             </select>
                         </div>
                     </div>
