@@ -219,6 +219,12 @@ async function callCustomAPI(base64Data) {
             // 使用正则表达式匹配并删除首尾的```latex```代码块标记
             latexCode = latexCode.replace(/^\s*```latex[\r\n]*|[\r\n]*```\s*$/g, '');
 
+            // 使用正则表达式匹配并删除首尾的\(和\)标签及其附近的换行符
+            latexCode = latexCode.replace(/^\s*\\\([\r\n]*|[\r\n]*\\\)\s*$/g, '');
+
+            // 使用正则表达式匹配并删除首尾的<|begin_of_box|>和<|end_of_box|>标签及其附近的换行符
+            latexCode = latexCode.replace(/^\s*<\|begin_of_box\|>\s*|\s*<\|end_of_box\|>\s*$/g, '');
+
             // 更新输入框和渲染
             document.getElementById('latexInput').value = latexCode;
             renderLaTeX();
