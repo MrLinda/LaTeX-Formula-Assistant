@@ -1,7 +1,18 @@
 // 全局变量，用于跟踪是否正在加载
 let isLoading = false;
 
+// 历史记录数组，用于存储最近复制的LaTeX代码
+let historyList = [];
+// 历史记录最大数量
+const MAX_HISTORY_ITEMS = 20;
+
 document.addEventListener('DOMContentLoaded', function() {
+    // 从本地存储加载历史记录
+    loadHistory();
+    
+    // 更新历史记录UI
+    updateHistoryUI();
+
     // 监听粘贴事件
     document.addEventListener('paste', handlePaste);
 
@@ -19,6 +30,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 监听复制MathML按钮
     document.getElementById('copyMathMLButton').addEventListener('click', copyMathML);
+    
+    // 监听清空历史记录按钮
+    document.getElementById('clearHistoryButton').addEventListener('click', function() {
+        // 显示Bootstrap模态框
+        const clearHistoryModal = new bootstrap.Modal(document.getElementById('clearHistoryModal'));
+        clearHistoryModal.show();
+    });
+    
+    // 监听确认清空按钮
+    document.getElementById('confirmClearHistory').addEventListener('click', function() {
+        // 关闭模态框
+        const clearHistoryModal = bootstrap.Modal.getInstance(document.getElementById('clearHistoryModal'));
+        clearHistoryModal.hide();
+        
+        // 清空历史记录
+        historyList = [];
+        localStorage.removeItem('latexHistory');
+        updateHistoryUI();
+        showToast('历史记录已清空');
+    });
 
     // 初始化模型选择下拉框
     if (typeof generateModelOptions === 'function') {
@@ -31,6 +62,49 @@ document.addEventListener('DOMContentLoaded', function() {
     // 尝试从本地存储加载API密钥
     loadApiKey();
 });
+
+// 保存到历史记录
+function saveToHistory(latexCode) {
+    if (!latexCode || latexCode.trim() === '') return;
+    
+    // 检查是否已经存在相同的条目（避免重复）
+    const exists = historyList.some(item => item.code === latexCode);
+    if (!exists) {
+        // 添加新的历史记录项
+        historyList.unshift({
+            code: latexCode,
+            timestamp: new Date().toISOString()
+        });
+        
+        // 限制历史记录数量
+        if (historyList.length > MAX_HISTORY_ITEMS) {
+            historyList = historyList.slice(0, MAX_HISTORY_ITEMS);
+        }
+        
+        // 保存到本地存储
+        localStorage.setItem('latexHistory', JSON.stringify(historyList));
+        
+        // 更新历史记录UI
+        updateHistoryUI();
+    }
+}
+
+// 从本地存储加载历史记录
+function loadHistory() {
+    const savedHistory = localStorage.getItem('latexHistory');
+    if (savedHistory) {
+        try {
+            historyList = JSON.parse(savedHistory);
+            // 确保历史记录数量不超过最大值
+            if (historyList.length > MAX_HISTORY_ITEMS) {
+                historyList = historyList.slice(0, MAX_HISTORY_ITEMS);
+            }
+        } catch (error) {
+            console.error('加载历史记录失败:', error);
+            historyList = [];
+        }
+    }
+}
 
 // 保存API密钥
 function saveApiKey() {
@@ -276,6 +350,8 @@ function copyLaTeX() {
     const latexInput = document.getElementById('latexInput').value;
     if (latexInput) {
         navigator.clipboard.writeText(latexInput).then(() => {
+            // 保存到历史记录
+            saveToHistory(latexInput);
             // 显示toast
             showToast('LaTeX已复制到剪贴板');
         }).catch(err => {
@@ -302,6 +378,8 @@ function copyMathML() {
             });
 
             navigator.clipboard.writeText(mathML).then(() => {
+                // 保存到历史记录
+                saveToHistory(latexInput);
                 // 显示toast
                 showToast('MathML已复制到剪贴板');
             }).catch(err => {
@@ -351,6 +429,95 @@ function showToast(message) {
 function showLoading() {
     isLoading = true;
     document.getElementById('loadingOverlay').style.display = 'flex';
+}
+
+// 更新历史记录UI
+function updateHistoryUI() {
+    const historyListElement = document.getElementById('historyList');
+    if (!historyListElement) return;
+    
+    // 清空历史记录列表
+    historyListElement.innerHTML = '';
+    
+    // 检查是否有历史记录
+    if (historyList.length === 0) {
+        const emptyItem = document.createElement('li');
+        emptyItem.className = 'list-group-item history-empty';
+        emptyItem.textContent = '暂无历史记录';
+        historyListElement.appendChild(emptyItem);
+        return;
+    }
+    
+    // 添加每个历史记录项
+    historyList.forEach((item, index) => {
+        const listItem = document.createElement('li');
+        listItem.className = 'list-group-item';
+        listItem.style.cursor = 'pointer';
+        listItem.style.position = 'relative';
+        listItem.title = `点击恢复此公式\n代码: ${item.code}`;
+        
+        // 添加渲染的LaTeX公式
+        const formulaContainer = document.createElement('div');
+        formulaContainer.className = 'history-formula';
+        formulaContainer.setAttribute('data-latex', item.code);
+        
+        try {
+            // 使用temml.js渲染LaTeX
+            const html = temml.renderToString(item.code, {
+                displayMode: true,
+                MathFont: 'Latin-Modern',
+                throwOnError: false
+            });
+            formulaContainer.innerHTML = html;
+        } catch (error) {
+            formulaContainer.textContent = item.code;
+            formulaContainer.className = 'text-danger';
+        }
+        
+        // 添加删除按钮
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'btn btn-danger btn-sm';
+        deleteButton.textContent = '×';
+        deleteButton.style.fontSize = '1.2rem';
+        deleteButton.style.lineHeight = '1';
+        deleteButton.style.padding = '0.25rem 0.5rem';
+        deleteButton.style.minWidth = '30px'; /* 设置最小宽度 */
+        deleteButton.style.height = '30px'; /* 设置固定高度 */
+        deleteButton.style.display = 'flex'; /* 使用flex布局 */
+        deleteButton.style.alignItems = 'center'; /* 垂直居中 */
+        deleteButton.style.justifyContent = 'center'; /* 水平居中 */
+        deleteButton.title = '删除此历史记录';
+        deleteButton.onclick = (e) => {
+            e.stopPropagation(); // 阻止事件冒泡
+            deleteHistoryItem(index);
+        };
+        
+        // 将公式和删除按钮添加到列表项
+        listItem.appendChild(formulaContainer);
+        listItem.appendChild(deleteButton);
+        
+        // 添加点击事件，用于恢复公式
+        listItem.onclick = () => {
+            restoreFromHistory(item.code);
+        };
+        
+        // 添加到历史记录列表
+        historyListElement.appendChild(listItem);
+    });
+}
+
+// 从历史记录中删除项
+function deleteHistoryItem(index) {
+    historyList.splice(index, 1);
+    localStorage.setItem('latexHistory', JSON.stringify(historyList));
+    updateHistoryUI();
+}
+
+// 从历史记录中恢复公式
+function restoreFromHistory(latexCode) {
+    document.getElementById('latexInput').value = latexCode;
+    renderLaTeX();
+    showToast('已从历史记录恢复公式');
 }
 
 // 隐藏加载动画

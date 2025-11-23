@@ -42,6 +42,66 @@
             width: 50px;
             height: 50px;
         }
+        
+        /* 历史记录相关样式 */
+        .history-container {
+            margin-top: 20px;
+        }
+        .history-list {
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 0.375rem;
+            /* 自定义滚动条样式 */
+            scrollbar-width: thin; /* Firefox */
+            scrollbar-color: #ccc #f8f9fa; /* Firefox */
+        }
+        /* Webkit 浏览器滚动条样式 */
+        .history-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        .history-list::-webkit-scrollbar-track {
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .history-list::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+        .history-list::-webkit-scrollbar-thumb:hover {
+            background: #aaa;
+        }
+        .history-list .list-group-item {
+            border-left: none;
+            border-right: none;
+            border-radius: 0;
+            min-height: 50px; /* 增加最小高度 */
+            padding-top: 12px; /* 增加上内边距 */
+            padding-bottom: 12px; /* 增加下内边距 */
+            display: flex; /* 使用flex布局 */
+            align-items: center; /* 垂直居中 */
+        }
+        .history-list .list-group-item:first-child {
+            border-top: none;
+        }
+        .history-list .list-group-item:last-child {
+            border-bottom: none;
+        }
+        .history-formula {
+            flex-grow: 1; /* 占据剩余空间 */
+            padding-right: 40px; /* 为删除按钮留出空间 */
+            overflow: hidden; /* 防止内容溢出 */
+            text-overflow: ellipsis; /* 文本溢出显示省略号 */
+            white-space: nowrap; /* 不换行 */
+        }
+        .history-empty {
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+        }
+        .clear-history-btn {
+            float: right;
+        }
     </style>
 </head>
 <body>
@@ -112,6 +172,24 @@
         </div>
     </div>
 
+    <!-- 历史记录卡片 -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card history-container">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">历史记录</h5>
+                    <button id="clearHistoryButton" class="btn btn-sm btn-outline-danger clear-history-btn">清空历史</button>
+                </div>
+                <div class="card-body">
+                    <p class="card-text mb-2">最近复制的公式（最多保存20条），点击可恢复：</p>
+                    <ul id="historyList" class="list-group history-list">
+                        <li class="list-group-item history-empty">暂无历史记录</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- 使用说明卡片 -->
     <div class="row mt-4">
         <div class="col-md-12">
@@ -127,6 +205,7 @@
                         <li><strong>查看LaTeX代码</strong>：上传图片后，<i>稍等片刻</i>，系统会自动识别图片中的公式并生成LaTeX代码，您可以在右侧查看和编辑。</li>
                         <li><strong>公式预览</strong>：在LaTeX代码输入框下方，会实时显示公式的预览效果。</li>
                         <li><strong>复制MathML</strong>：点击复制MathML按钮，将MathML代码复制到剪贴板，可以粘贴到Word里。</li>
+                        <li><strong>历史记录</strong>：每次复制公式时，系统会自动保存到历史记录，点击历史记录中的公式可快速恢复。</li>
                     </ul>
                 </div>
             </div>
@@ -164,6 +243,25 @@
 <div id="alertContainer" class="alert alert-warning alert-dismissible fade show" style="display: none; position: fixed; top: 20px; right: 20px; z-index: 1000;">
     <strong>提示!</strong> <span id="alertMessage"></span>
     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+
+<!-- 确认清空历史记录的模态框 -->
+<div class="modal fade" id="clearHistoryModal" tabindex="-1" aria-labelledby="clearHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clearHistoryModalLabel">确认清空历史记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                确定要清空所有历史记录吗？此操作不可恢复。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmClearHistory">确认清空</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="./bootstrap/js/bootstrap.bundle.min.js"></script>
