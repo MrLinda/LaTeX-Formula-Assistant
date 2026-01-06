@@ -42,6 +42,33 @@ function generateModelOptions() {
     placeholderOption.textContent = '待添加';
     placeholderOption.disabled = true;
     modelSelect.appendChild(placeholderOption);
+    
+    // 从本地存储加载上次选择的模型
+    loadSelectedModel();
+}
+
+// 保存选择的模型
+function saveSelectedModel(modelKey) {
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('selectedModel', modelKey);
+        }
+    } catch (e) {
+        console.error('Failed to save selected model to localStorage:', e);
+        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+            window.alert('无法将模型选择保存到本地存储。您的选择将在刷新页面后丢失。');
+        }
+    }
+}
+
+// 加载上次选择的模型
+function loadSelectedModel() {
+    const modelSelect = document.getElementById('modelSelect');
+    const savedModel = localStorage.getItem('selectedModel');
+    
+    if (savedModel && modelConfig[savedModel]) {
+        modelSelect.value = savedModel;
+    }
 }
 
 // 导出模型配置和相关函数
