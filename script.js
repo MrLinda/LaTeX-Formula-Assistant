@@ -55,6 +55,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof generateModelOptions === 'function') {
         generateModelOptions();
     }
+    
+    // 监听模型选择变化
+    document.getElementById('modelSelect').addEventListener('change', function() {
+        if (typeof saveSelectedModel === 'function') {
+            saveSelectedModel(this.value);
+        }
+    });
 
     // 初始化Temml渲染
     renderLaTeX();
