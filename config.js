@@ -8,9 +8,17 @@ const modelConfig = {
         name: "Qwen/Qwen2.5-VL-32B-Instruct",
         displayName: "Qwen2.5-VL-32B(￥1.89/M Tokens)"
     },
+    "Qwen3-VL-8B-Instruct": {
+        name: "Qwen/Qwen3-VL-8B-Instruct",
+        displayName: "Qwen3-VL-8B-Instruct(￥2.00/M Tokens)"
+    },
     "Qwen3-VL-30B-A3B-Instruct": {
         name: "Qwen/Qwen3-VL-30B-A3B-Instruct",
         displayName: "Qwen3-VL-30B-A3B-Instruct(￥2.80/M Tokens)"
+    },
+    "Qwen3-VL-32B-Instruct": {
+        name: "Qwen/Qwen3-VL-32B-Instruct",
+        displayName: "Qwen3-VL-32B-Instruct(￥4.00/M Tokens)"
     },
     "GLM-4.1V-9B-Thinking(Free)": {
         name: "THUDM/GLM-4.1V-9B-Thinking",
