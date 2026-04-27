@@ -61,6 +61,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (typeof saveSelectedModel === 'function') {
             saveSelectedModel(this.value);
         }
+        if (this.value === 'custom') {
+            if (typeof toggleCustomModelInput === 'function') {
+                toggleCustomModelInput();
+            }
+        } else {
+            if (typeof hideCustomModelInput === 'function') {
+                hideCustomModelInput();
+            }
+        }
+    });
+
+    // 监听自定义模型输入变化，实时保存
+    document.getElementById('customModelInput').addEventListener('input', function() {
+        if (typeof saveSelectedModel === 'function') {
+            saveSelectedModel('custom');
+        }
     });
 
     // 初始化Temml渲染
@@ -239,7 +255,15 @@ async function callCustomAPI(base64Data) {
 
         // 获取模型选择器
         const modelSelect = document.getElementById('modelSelect');
-        const modelName = modelConfig[modelSelect.value].name;
+        const modelName = typeof getSelectedModelName === 'function'
+            ? getSelectedModelName()
+            : modelConfig[modelSelect.value].name;
+
+        if (!modelName) {
+            hideLoading();
+            showAlert('请输入有效的模型代号');
+            return;
+        }
         const url = "https://api.siliconflow.cn/v1/chat/completions";
         const prompts = "请把图中的公式转成LaTeX格式，不要输出任何额外内容。";
 
