@@ -82,6 +82,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化Temml渲染
     renderLaTeX();
 
+    // 公式预览弹窗
+    document.getElementById('openPreviewModal').addEventListener('click', openPreviewModal);
+    document.getElementById('closePreviewModal').addEventListener('click', closePreviewModal);
+    document.getElementById('previewModal').addEventListener('click', function(e) {
+        if (e.target === this) closePreviewModal();
+    });
+
     // 尝试从本地存储加载API密钥
     loadApiKey();
 });
@@ -512,20 +519,47 @@ function updateHistoryUI() {
         deleteButton.style.fontSize = '1.2rem';
         deleteButton.style.lineHeight = '1';
         deleteButton.style.padding = '0.25rem 0.5rem';
-        deleteButton.style.minWidth = '30px'; /* 设置最小宽度 */
-        deleteButton.style.height = '30px'; /* 设置固定高度 */
-        deleteButton.style.display = 'flex'; /* 使用flex布局 */
-        deleteButton.style.alignItems = 'center'; /* 垂直居中 */
-        deleteButton.style.justifyContent = 'center'; /* 水平居中 */
+        deleteButton.style.minWidth = '30px';
+        deleteButton.style.height = '30px';
+        deleteButton.style.display = 'flex';
+        deleteButton.style.alignItems = 'center';
+        deleteButton.style.justifyContent = 'center';
         deleteButton.title = '删除此历史记录';
         deleteButton.onclick = (e) => {
-            e.stopPropagation(); // 阻止事件冒泡
+            e.stopPropagation();
             deleteHistoryItem(index);
         };
+
+        // 添加展开按钮
+        const expandButton = document.createElement('button');
+        expandButton.className = 'btn btn-sm btn-outline-secondary';
+        expandButton.textContent = '▼';
+        expandButton.style.fontSize = '0.7rem';
+        expandButton.style.padding = '0.25rem 0.5rem';
+        expandButton.style.minWidth = '30px';
+        expandButton.style.height = '30px';
+        expandButton.style.display = 'flex';
+        expandButton.style.alignItems = 'center';
+        expandButton.style.justifyContent = 'center';
+        expandButton.title = '展开/收起公式';
+        expandButton.onclick = (e) => {
+            e.stopPropagation();
+            listItem.classList.toggle('expanded');
+            expandButton.textContent = listItem.classList.contains('expanded') ? '▲' : '▼';
+        };
+
+        // 添加按钮容器
+        const buttonGroup = document.createElement('div');
+        buttonGroup.style.display = 'flex';
+        buttonGroup.style.gap = '4px';
+        buttonGroup.style.flexShrink = '0';
+        buttonGroup.style.alignSelf = 'center';
+        buttonGroup.appendChild(expandButton);
+        buttonGroup.appendChild(deleteButton);
         
-        // 将公式和删除按钮添加到列表项
+        // 将公式和按钮添加到列表项
         listItem.appendChild(formulaContainer);
-        listItem.appendChild(deleteButton);
+        listItem.appendChild(buttonGroup);
         
         // 添加点击事件，用于恢复公式
         listItem.onclick = () => {
@@ -555,4 +589,27 @@ function restoreFromHistory(latexCode) {
 function hideLoading() {
     isLoading = false;
     document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// 打开公式预览弹窗
+function openPreviewModal() {
+    const latexInput = document.getElementById('latexInput').value;
+    const previewEl = document.getElementById('formulaPreviewFullscreen');
+    previewEl.innerHTML = '';
+    try {
+        const html = temml.renderToString(latexInput, {
+            displayMode: true,
+            MathFont: 'Latin-Modern',
+            throwOnError: false
+        });
+        previewEl.innerHTML = html;
+    } catch (error) {
+        previewEl.innerHTML = `<div class="text-danger">渲染错误: ${error.message}</div>`;
+    }
+    document.getElementById('previewModal').style.display = 'flex';
+}
+
+// 关闭公式预览弹窗
+function closePreviewModal() {
+    document.getElementById('previewModal').style.display = 'none';
 }
