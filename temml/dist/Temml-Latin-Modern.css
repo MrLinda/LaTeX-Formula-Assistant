@@ -46,22 +46,112 @@ math {
   font-family: "Latin Modern Math", math;
 }
 
-/* Next line is active in Firefox and Safari.
+/* display: block is necessary in Firefox and Safari.
  * Not in Chromium, which recognizes display: "block math" written inline. */
-math.tml-display { display: block; }
+ math.tml-display {
+  display: block;
+  width: 100%;
+}
 
 *.mathscr {
   font-family: "Temml";
 }
 
-/* Chromium prime alignment */
-mo.tml-prime {
-  font-family: Temml;
+/* Cramped superscripts in WebKit */
+mfrac > :nth-child(2),
+msqrt,
+mover > :first-child {
+  math-shift: compact
 }
 
-/* Prevent f' from overlapping in Chromium */
-mo.prime-pad {
-  padding-left: 0.08em;
+.menclose {
+  display: inline-block;
+  position: relative;
+  padding: 0.5ex 0ex;
+}
+.tml-cancelto {
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.5ex 0ex;
+  background-color: currentColor;
+  /* Use the SVG as an alpha mask (painted by background-color) */
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><defs><marker id='a' markerHeight='5' markerUnits='strokeWidth' markerWidth='7' orient='auto' refX='7' refY='2.5'><path fill='black' d='m0 0 7 2.5L0 5z'/></marker></defs><line x2='100%25' y1='100%25' stroke='black' stroke-width='.06em' marker-end='url(%23a)' vector-effect='non-scaling-stroke'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><defs><marker id='a' markerHeight='5' markerUnits='strokeWidth' markerWidth='7' orient='auto' refX='7' refY='2.5'><path fill='black' d='m0 0 7 2.5L0 5z'/></marker></defs><line x2='100%25' y1='100%25' stroke='black' stroke-width='.06em' marker-end='url(%23a)' vector-effect='non-scaling-stroke'/></svg>");
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+          mask-size: 100% 100%;
+  -webkit-mask-position: 0 0;
+          mask-position: 0 0;
+}
+
+@supports (-moz-appearance: none) {
+  /* \vec w/o italic correction for Firefox */
+  .tml-vec {
+    transform: scale(0.75)
+  }
+  /* Fix \cancelto in Firefox */
+  .ff-narrow {
+    width: 0em;
+  }
+  .ff-nudge-left {
+    margin-left: -0.2em;
+  }
+}
+
+@supports (not (-moz-appearance: none)) {
+  /* Chromium and WebKit */
+  /* prime vertical alignment */
+  mo.tml-prime {
+    font-family: Temml;
+  }
+  /* Italic correction on superscripts */
+  .tml-sml-pad {
+    padding-left: 0.05em;
+  }
+  .tml-med-pad {
+    padding-left: 0.10em;
+  }
+  .tml-lrg-pad {
+    padding-left: 0.15em;
+  }
+}
+
+@supports (-webkit-backdrop-filter: blur(1px)) {
+  /* WebKit vertical & italic correction on accents */
+  .wbk-acc {
+    /* lower by x-height distance */
+    transform: translate(0em, 0.431em);
+  }
+  .wbk-sml {
+    transform: translate(0.07em, 0);
+  }
+  .wbk-sml-acc {
+    transform: translate(0.07em, 0.431em);
+  }
+  .wbk-sml-vec {
+    transform: scale(0.75) translate(0.07em, 0);
+  }
+  .wbk-med {
+    transform: translate(0.14em, 0);
+  }
+  .wbk-med-acc {
+    transform: translate(0.14em, 0.431em);
+  }
+  .wbk-med-vec {
+    transform: scale(0.75) translate(0.14em, 0);
+  }
+  .wbk-lrg {
+    transform: translate(0.21em, 0);
+  }
+  .wbk-lrg-acc {
+    transform: translate(0.21em, 0.431em);
+  }
+  .wbk-lrg-vec {
+    transform: scale(0.75) translate(0.21em, 0);
+  }
 }
 
 /* \cancel & \phase use background images. Get them to print. */
@@ -78,8 +168,34 @@ menclose {
   text-align: left;
 }
 
+/* For CD labels that grow to the left in Firefox and WebKit */
+.tml-shift-left { margin-left:-200% }
+
 /* Styles for Chromium only */
 @supports (not (-webkit-backdrop-filter: blur(1px))) and (not (-moz-appearance: none)) {
+  /* Italic correction on accents */
+  .chr-sml {
+    transform: translate(0.07em, 0)
+  }
+  .chr-sml-vec {
+    transform: scale(0.75) translate(0.07em, 0)
+  }
+  .chr-med {
+    transform: translate(0.14em, 0)
+  }
+  .chr-med-vec {
+    transform: scale(0.75) translate(0.14em, 0)
+  }
+  .chr-lrg {
+    transform: translate(0.21em, 0)
+  }
+  .chr-lrg-vec {
+    transform: scale(0.75) translate(0.21em, 0)
+  }
+
+  /* For CD labels that grow to the left */
+  .tml-shift-left { margin-left:-100% }
+
   /* MathML Core & Chromium do not support the MathML 3.0 element <menclose> attributes. */
   /* So use styles. */
   menclose {
@@ -87,7 +203,7 @@ menclose {
     padding: 0.5ex 0ex;
   }
   
-    .tml-overline {
+  .tml-overline {
     padding: 0.1em 0 0 0;
     border-top: 0.065em solid;
   }
@@ -116,18 +232,7 @@ menclose {
     clip-path: polygon(0em calc(55% + 0.0333em), 0em calc(55% - 0.0333em), 100% calc(55% - 0.0333em), 100% calc(55% + 0.0333em));
   }
   .tml-xcancel {
-    background: linear-gradient(to top left,
-    rgba(0,0,0,0) 0%,
-    rgba(0,0,0,0) calc(50% - 0.06em),
-    rgba(0,0,0,1) 50%,
-    rgba(0,0,0,0) calc(50% + 0.06em),
-    rgba(0,0,0,0) 100%),
-    linear-gradient(to top right,
-    rgba(0,0,0,0) 0%,
-    rgba(0,0,0,0) calc(50% - 0.06em),
-    rgba(0,0,0,1) 50%,
-    rgba(0,0,0,0) calc(50% + 0.06em),
-    rgba(0,0,0,0) 100%)
+    clip-path: polygon(0.05em 0em, 0em 0.05em, calc(50% - 0.05em) 50%, 0em calc(100% - 0.05em), 0.05em 100%, 50% calc(50% + 0.05em), calc(100% - 0.05em) 100%, 100% calc(100% - 0.05em), calc(50% + 0.05em) 50%, 100% 0.05em, calc(100% - 0.05em) 0%, 50% calc(50% - 0.05em));
   }
 
   .longdiv-top {
@@ -165,10 +270,6 @@ menclose {
     clip-path: polygon(0.05em 100%, 0em calc(100% - 0.05em), calc(100% - 0.05em) 0em, 100% 0.05em);
   }
 
-  .tml-box {
-    padding: 3pt 0 3pt 0;
-    border: 1px solid;
-  }
   .tml-fbox {
     padding: 3pt;
     border: 1px solid;
@@ -213,10 +314,8 @@ menclose {
   }
 }
 
-/* Adjust WebKit accents */
-@supports (-webkit-backdrop-filter: blur(1px)) {
-  .tml-xshift { transform: translate(0px, 0.45em) }
-  .tml-capshift { transform: translate(0px, 0.35em) }
+.special-fraction {
+  font-family: 'Times New Roman', Times, 'STIX TWO', Tinos, serif;
 }
 
 /* flex-wrap for line-breaking in Chromium */
@@ -247,7 +346,7 @@ mtable.tml-small mtd {
   math > mrow { padding: 0 }
   /* Adjust Firefox spacing between array rows */
   mtd, mtable.tml-small mtd { padding-top: 0; padding-bottom: 0; }
-  mtable.tml-jot mtd { padding-top: 0.2ex; padding-bottom: 0.0ex; }
+  mtable.tml-jot mtd { padding-top: 0.2ex; padding-bottom: 0.ex; }
 }
 
 /* AMS environment auto-numbering via CSS counter. */
