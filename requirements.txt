@@ -1,5 +1,6 @@
 # 桌面应用运行时依赖（打进最终 exe）
-pywebview[edgechromium]==6.2.1
+# pywebview 6.2.1 已经把 pythonnet 作为 win32 的无条件依赖，无需额外 [extra]
+pywebview==6.2.1
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 onnxruntime>=1.19

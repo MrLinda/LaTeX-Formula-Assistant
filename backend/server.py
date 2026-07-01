@@ -94,12 +94,17 @@ for _fname in FRONTEND_FILES:
     app.add_api_route(f"/{_fname}", _make_handler(_fname), methods=["GET"])
 
 
-# 前端资源目录 (bootstrap/, temml/)
-@app.get("/{top}/{path:path}")
-async def frontend_dir(top: str, path: str) -> Response:
-    if top not in FRONTEND_DIRS:
-        raise HTTPException(status_code=404)
-    return _serve_frontend_file(f"{top}/{path}")
+# 前端资源目录 (bootstrap/, temml/) - 每个目录显式注册，避免吞 /api/*
+def _register_dir(dir_name: str) -> None:
+    async def _handler(path: str) -> Response:
+        return _serve_frontend_file(f"{dir_name}/{path}")
+    app.add_api_route(
+        f"/{dir_name}/{{path:path}}", _handler, methods=["GET"]
+    )
+
+
+for _dir in FRONTEND_DIRS:
+    _register_dir(_dir)
 
 
 # ---------- 骨架 API（Phase 2/3 才有实际实现） ----------
