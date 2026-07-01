@@ -3,11 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 桌面版由后端注入 content；纯 web 版留空，本地模型会自动隐藏 -->
+    <meta name="local-api-base" content="">
     <title>LaTeX公式助手</title>
     <link href="./bootstrap/css/bootstrap.min.css" rel="stylesheet">
 
     <!-- 添加 Temml.js -->
     <script src="./temml/dist/temml.min.js"></script>
+    <!-- 桌面版本地 API 端点引导（读取 <meta name="local-api-base">） -->
+    <script>
+        (function () {
+            var meta = document.querySelector('meta[name="local-api-base"]');
+            var base = meta && meta.getAttribute('content');
+            if (base && /^https?:\/\//.test(base)) {
+                window.LOCAL_API_BASE = base;
+            }
+        })();
+    </script>
     <!-- 添加模型配置文件 -->
     <script src="config.js"></script>
 

@@ -1,2 +1,18 @@
 /LaTeX Formula Assistant.zip
 .idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# PyInstaller
+build/output/
+dist/
+*.spec.bak
+
+# 本地开发时的模型缓存
+models_local/

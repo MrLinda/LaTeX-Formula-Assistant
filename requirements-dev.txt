@@ -1,0 +1,11 @@
+# 构建/转换期依赖（不进最终 exe，仅在开发/CI 机器安装）
+-r requirements.txt
+
+# Paddle → ONNX 转换链路
+paddlepaddle==3.1.0
+paddleocr
+paddle2onnx
+onnx
+
+# 打包
+pyinstaller>=6.10

@@ -219,8 +219,99 @@ function processImage(file) {
     reader.readAsDataURL(file);
 }
 
-// 调用自定义API
+// 调用识别 API：根据当前选中模型的 provider 分流到云端或本地
 async function callCustomAPI(base64Data) {
+    const modelSelect = document.getElementById('modelSelect');
+    const modelKey = modelSelect.value;
+    const cfg = modelConfig[modelKey];
+    const provider = cfg && cfg.provider ? cfg.provider : 'cloud';
+
+    if (provider === 'local') {
+        return callLocalAPI(base64Data, cfg.name);
+    }
+    return callCloudAPI(base64Data);
+}
+
+// 应用识别结果到 UI（云端/本地共用）
+function applyRecognitionResult(rawLatex, totalTokens) {
+    let latexCode = rawLatex || '';
+
+    // 使用正则表达式匹配并删除首尾的$$符号及其附近的换行符
+    latexCode = latexCode.replace(/^\s*\$\$[\r\n]*|[\r\n]*\$\$\s*$/g, '');
+
+    // 使用正则表达式匹配并删除首尾的```latex```代码块标记
+    latexCode = latexCode.replace(/^\s*```latex[\r\n]*|[\r\n]*```\s*$/g, '');
+
+    // 使用正则表达式匹配并删除首尾的\(和\)标签及其附近的换行符
+    latexCode = latexCode.replace(/^\s*\\\([\r\n]*|[\r\n]*\\\)\s*$/g, '');
+
+    // 使用正则表达式匹配并删除首尾的<|begin_of_box|>和<|end_of_box|>标签及其附近的换行符
+    latexCode = latexCode.replace(/^\s*<\|begin_of_box\|>\s*|\s*<\|end_of_box\|>\s*$/g, '');
+
+    // 更新输入框和渲染
+    document.getElementById('latexInput').value = latexCode;
+    renderLaTeX();
+
+    document.getElementById('tokenCountDisplay').textContent =
+        typeof totalTokens === 'number' ? totalTokens : 0;
+}
+
+// 调用本地 Python 后端识别（桌面版）
+async function callLocalAPI(base64Data, modelName) {
+    if (!window.LOCAL_API_BASE) {
+        hideLoading();
+        showAlert('本地推理不可用：未检测到桌面运行时。请使用云端模型或安装桌面版。');
+        return;
+    }
+
+    try {
+        const resp = await fetch(`${window.LOCAL_API_BASE}/api/recognize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelName, image_base64: base64Data })
+        });
+
+        if (resp.status === 409) {
+            hideLoading();
+            const data = await resp.json().catch(() => ({}));
+            if (data.error === 'model_not_downloaded') {
+                showAlert(`模型「${modelName}」尚未下载。模型下载器将在后续版本提供。`);
+            } else {
+                showAlert(data.detail || '模型不可用');
+            }
+            return;
+        }
+
+        if (resp.status === 501) {
+            hideLoading();
+            showAlert('本地推理功能正在开发中，请暂时使用云端模型。');
+            return;
+        }
+
+        if (!resp.ok) {
+            hideLoading();
+            const text = await resp.text().catch(() => '');
+            throw new Error(`本地 API 调用失败，状态码: ${resp.status} ${text}`);
+        }
+
+        const data = await resp.json();
+        hideLoading();
+
+        if (data && typeof data.latex === 'string') {
+            const tokens = data.usage && data.usage.total_tokens ? data.usage.total_tokens : 0;
+            applyRecognitionResult(data.latex, tokens);
+        } else {
+            showAlert('本地推理未返回有效结果。');
+        }
+    } catch (error) {
+        console.error('Local API error:', error);
+        hideLoading();
+        showAlert('本地推理调用失败：' + (error.message || error));
+    }
+}
+
+// 调用云端 SiliconFlow API（原有逻辑，保持行为一致）
+async function callCloudAPI(base64Data) {
     try {
         // 检查网络连接
         if (!navigator.onLine) {
@@ -291,28 +382,8 @@ async function callCustomAPI(base64Data) {
         if (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
             hideLoading(); // 隐藏加载动画
 
-            // 获取LaTeX代码
-            let latexCode = data.choices[0].message.content;
-
-            // 使用正则表达式匹配并删除首尾的$$符号及其附近的换行符
-            latexCode = latexCode.replace(/^\s*\$\$[\r\n]*|[\r\n]*\$\$\s*$/g, '');
-
-            // 使用正则表达式匹配并删除首尾的```latex```代码块标记
-            latexCode = latexCode.replace(/^\s*```latex[\r\n]*|[\r\n]*```\s*$/g, '');
-
-            // 使用正则表达式匹配并删除首尾的\(和\)标签及其附近的换行符
-            latexCode = latexCode.replace(/^\s*\\\([\r\n]*|[\r\n]*\\\)\s*$/g, '');
-
-            // 使用正则表达式匹配并删除首尾的<|begin_of_box|>和<|end_of_box|>标签及其附近的换行符
-            latexCode = latexCode.replace(/^\s*<\|begin_of_box\|>\s*|\s*<\|end_of_box\|>\s*$/g, '');
-
-            // 更新输入框和渲染
-            document.getElementById('latexInput').value = latexCode;
-            renderLaTeX();
-
-            if (data.usage && data.usage.total_tokens) {
-                document.getElementById('tokenCountDisplay').textContent = data.usage.total_tokens;
-            }
+            const totalTokens = data.usage && data.usage.total_tokens ? data.usage.total_tokens : 0;
+            applyRecognitionResult(data.choices[0].message.content, totalTokens);
 
         } else {
             hideLoading(); // 隐藏加载动画

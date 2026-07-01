@@ -1,0 +1,14 @@
+[project]
+name = "latex-formula-assistant"
+version = "0.1.0"
+description = "LaTeX 公式识别助手 - 桌面版（PyWebView + 本地 ONNX 模型 + 云端 API）"
+readme = "readme.md"
+requires-python = ">=3.10,<3.13"
+authors = [{ name = "MrLinda" }]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
