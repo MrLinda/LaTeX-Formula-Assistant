@@ -242,39 +242,101 @@ function processImage(file) {
     reader.readAsDataURL(file);
 }
 
+// 分类云端 API 错误：根据 HTTP 状态码和响应体给出精确提示
+async function reportCloudAPIError(response) {
+    let bodyText = '';
+    let bodyJson = null;
+    try {
+        bodyText = await response.text();
+        try { bodyJson = JSON.parse(bodyText); } catch (_) { /* 非 JSON */ }
+    } catch (_) { /* body 读不出 */ }
+
+    // 兼容 OpenAI 风格 {"error":{"message":"..."}} 与 SiliconFlow 风格 {"message":"..."}
+    const detailMsg = (bodyJson && (
+        (bodyJson.error && bodyJson.error.message) ||
+        bodyJson.message ||
+        (typeof bodyJson.error === 'string' ? bodyJson.error : '')
+    )) || bodyText || '';
+
+    console.error(`[API] HTTP ${response.status}`, bodyText);
+
+    const balanceKeywords = /余额|balance|arrears|insufficient|quota|欠费|payment|充值/i;
+    const status = response.status;
+
+    // 401: 未授权 → API 密钥错误
+    if (status === 401) {
+        return showAlert('API 密钥无效或已过期，请检查后重新保存。');
+    }
+    // 402: 需要付款 → 明确的余额不足
+    if (status === 402) {
+        return showAlert('账户余额不足，请到 SiliconFlow 充值后重试。');
+    }
+    // 403: 权限被拒 → 可能是余额、账号、模型未开通
+    if (status === 403) {
+        if (balanceKeywords.test(detailMsg)) {
+            return showAlert('账户余额不足，请到 SiliconFlow 充值后重试。');
+        }
+        return showAlert('访问被拒绝：' + (detailMsg || '当前 API 密钥无权访问该模型。'));
+    }
+    // 404: 模型不存在 → 模型配置错误
+    if (status === 404) {
+        return showAlert('模型不存在或未开通：请检查所选模型在 SiliconFlow 是否可用。');
+    }
+    // 400: 请求参数错误 → 通常是模型配置或图片有问题
+    if (status === 400) {
+        return showAlert('模型配置错误（400）：' + (detailMsg || '模型名或请求参数有误。'));
+    }
+    // 413: 图片过大
+    if (status === 413) {
+        return showAlert('图片体积过大，请压缩后重试。');
+    }
+    // 429: 速率限制，部分服务商也用它表示余额不足
+    if (status === 429) {
+        if (balanceKeywords.test(detailMsg)) {
+            return showAlert('账户余额不足，请到 SiliconFlow 充值后重试。');
+        }
+        return showAlert('请求过于频繁，请稍后重试。');
+    }
+    // 5xx: 服务端错误
+    if (status >= 500 && status < 600) {
+        return showAlert(`SiliconFlow 服务端错误（${status}），请稍后重试。`);
+    }
+    // 其它未知
+    return showAlert(`未知错误（HTTP ${status}）：${detailMsg || '请检查网络与配置。'}`);
+}
+
 // 调用自定义API
 async function callCustomAPI(base64Data) {
+    // ---- 预检查：网络 ----
+    if (!navigator.onLine) {
+        hideLoading();
+        return showAlert('网络连接错误：当前无网络，请检查网络后重试。');
+    }
+
+    // ---- 预检查：API 密钥 ----
+    const apiKey = document.getElementById('apiKeyInput').value.trim();
+    if (!apiKey) {
+        hideLoading();
+        return showAlert('API 密钥为空：请先在左侧输入 SiliconFlow API 密钥并保存。');
+    }
+
+    // ---- 预检查：模型配置（兼容自定义模型代号） ----
+    const modelSelect = document.getElementById('modelSelect');
+    const modelName = typeof getSelectedModelName === 'function'
+        ? getSelectedModelName()
+        : (modelConfig[modelSelect.value] && modelConfig[modelSelect.value].name);
+    if (!modelName) {
+        hideLoading();
+        return showAlert('模型配置错误：请选择有效模型或填写自定义模型代号。');
+    }
+
+    const url = "https://api.siliconflow.cn/v1/chat/completions";
+    const prompts = "请把图中的公式转成LaTeX格式，不要输出任何额外内容。";
+
+    // ---- 发起请求，隔离网络层错误 ----
+    let response;
     try {
-        // 检查网络连接
-        if (!navigator.onLine) {
-            hideLoading(); // 隐藏加载动画
-            showAlert('当前无网络连接，请检查您的网络设置。');
-            return;
-        }
-
-        // 获取API密钥
-        const apiKey = document.getElementById('apiKeyInput').value.trim();
-        if (!apiKey) {
-            hideLoading(); // 隐藏加载动画
-            showAlert('请输入有效的API密钥');
-            return;
-        }
-
-        // 获取模型选择器
-        const modelSelect = document.getElementById('modelSelect');
-        const modelName = typeof getSelectedModelName === 'function'
-            ? getSelectedModelName()
-            : modelConfig[modelSelect.value].name;
-
-        if (!modelName) {
-            hideLoading();
-            showAlert('请输入有效的模型代号');
-            return;
-        }
-        const url = "https://api.siliconflow.cn/v1/chat/completions";
-        const prompts = "请把图中的公式转成LaTeX格式，不要输出任何额外内容。";
-
-        const response = await fetch(url, {
+        response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -311,52 +373,59 @@ async function callCustomAPI(base64Data) {
                 response_format: { type: "text" }
             })
         });
-
-        if (!response.ok) {
-            hideLoading(); // 隐藏加载动画
-            throw new Error(`API调用失败，状态码: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-            hideLoading(); // 隐藏加载动画
-
-            // 获取LaTeX代码
-            let latexCode = data.choices[0].message.content;
-
-            // 使用正则表达式匹配并删除首尾的$$符号及其附近的换行符
-            latexCode = latexCode.replace(/^\s*\$\$[\r\n]*|[\r\n]*\$\$\s*$/g, '');
-
-            // 使用正则表达式匹配并删除首尾的```latex```代码块标记
-            latexCode = latexCode.replace(/^\s*```latex[\r\n]*|[\r\n]*```\s*$/g, '');
-
-            // 使用正则表达式匹配并删除首尾的\(和\)标签及其附近的换行符
-            latexCode = latexCode.replace(/^\s*\\\([\r\n]*|[\r\n]*\\\)\s*$/g, '');
-
-            // 使用正则表达式匹配并删除首尾的<|begin_of_box|>和<|end_of_box|>标签及其附近的换行符
-            latexCode = latexCode.replace(/^\s*<\|begin_of_box\|>\s*|\s*<\|end_of_box\|>\s*$/g, '');
-
-            // 更新输入框和渲染
-            document.getElementById('latexInput').value = latexCode;
-            renderLaTeX();
-
-            if (data.usage && data.usage.total_tokens) {
-                document.getElementById('tokenCountDisplay').textContent = data.usage.total_tokens;
-            }
-
-        } else {
-            hideLoading(); // 隐藏加载动画
-            showAlert('无法提取LaTeX代码，请尝试其他图片。');
-        }
     } catch (error) {
-        console.error('Error:', error);
-        hideLoading(); // 隐藏加载动画
-        if (error.message.includes('Failed to fetch')) {
-            showAlert('API链接解析失败，请检查链接的合法性和网络连接。');
-        } else {
-            showAlert('API调用失败，请检查网络连接或API密钥。');
+        console.error('[API] fetch error:', error);
+        hideLoading();
+        // fetch 抛异常通常是网络层问题：DNS 失败、断网、CORS、TLS 等
+        if (error instanceof TypeError) {
+            return showAlert('网络连接错误：无法连接到 SiliconFlow，请检查网络或代理。');
         }
+        return showAlert('未知错误：' + (error.message || String(error)));
+    }
+
+    // ---- 处理 HTTP 错误状态 ----
+    if (!response.ok) {
+        hideLoading();
+        return reportCloudAPIError(response);
+    }
+
+    // ---- 解析响应 ----
+    let data;
+    try {
+        data = await response.json();
+    } catch (error) {
+        console.error('[API] JSON parse error:', error);
+        hideLoading();
+        return showAlert('未知错误：SiliconFlow 返回了无法解析的响应。');
+    }
+
+    hideLoading();
+
+    if (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        // 获取LaTeX代码
+        let latexCode = data.choices[0].message.content;
+
+        // 使用正则表达式匹配并删除首尾的$$符号及其附近的换行符
+        latexCode = latexCode.replace(/^\s*\$\$[\r\n]*|[\r\n]*\$\$\s*$/g, '');
+
+        // 使用正则表达式匹配并删除首尾的```latex```代码块标记
+        latexCode = latexCode.replace(/^\s*```latex[\r\n]*|[\r\n]*```\s*$/g, '');
+
+        // 使用正则表达式匹配并删除首尾的\(和\)标签及其附近的换行符
+        latexCode = latexCode.replace(/^\s*\\\([\r\n]*|[\r\n]*\\\)\s*$/g, '');
+
+        // 使用正则表达式匹配并删除首尾的<|begin_of_box|>和<|end_of_box|>标签及其附近的换行符
+        latexCode = latexCode.replace(/^\s*<\|begin_of_box\|>\s*|\s*<\|end_of_box\|>\s*$/g, '');
+
+        // 更新输入框和渲染
+        document.getElementById('latexInput').value = latexCode;
+        renderLaTeX();
+
+        if (data.usage && data.usage.total_tokens) {
+            document.getElementById('tokenCountDisplay').textContent = data.usage.total_tokens;
+        }
+    } else {
+        showAlert('识别失败：模型返回了空内容，请尝试其他图片或切换模型。');
     }
 }
 

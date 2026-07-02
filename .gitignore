@@ -1,2 +1,8 @@
 /LaTeX Formula Assistant.zip
 .idea/
+
+# Python 缓存 (feature/desktop-app 分支产生，避免误入 master)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
