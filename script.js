@@ -388,14 +388,15 @@ async function callCloudAPI(base64Data) {
         return showAlert('API 密钥为空：请先在左侧输入 SiliconFlow API 密钥并保存。');
     }
 
-    // ---- 预检查：模型配置 ----
+    // ---- 预检查：模型配置（兼容自定义模型代号） ----
     const modelSelect = document.getElementById('modelSelect');
-    const cfg = modelConfig[modelSelect.value];
-    if (!cfg || !cfg.name) {
+    const modelName = typeof getSelectedModelName === 'function'
+        ? getSelectedModelName()
+        : (modelConfig[modelSelect.value] && modelConfig[modelSelect.value].name);
+    if (!modelName) {
         hideLoading();
-        return showAlert('模型配置错误：当前所选模型未在配置中找到。');
+        return showAlert('模型配置错误：请选择有效模型或填写自定义模型代号。');
     }
-    const modelName = cfg.name;
 
     const url = "https://api.siliconflow.cn/v1/chat/completions";
     const prompts = "请把图中的公式转成LaTeX格式，不要输出任何额外内容。";

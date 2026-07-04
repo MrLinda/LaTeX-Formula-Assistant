@@ -24,16 +24,6 @@ const modelConfig = {
         provider: "local"
     },
     // === 云端模型（SiliconFlow）===
-    "Qwen2.5-VL-7B": {
-        name: "Pro/Qwen/Qwen2.5-VL-7B-Instruct",
-        displayName: "Qwen2.5-VL-7B(￥0.35/M Tokens)",
-        provider: "cloud"
-    },
-    "Qwen2.5-VL-32B": {
-        name: "Qwen/Qwen2.5-VL-32B-Instruct",
-        displayName: "Qwen2.5-VL-32B(￥1.89/M Tokens)",
-        provider: "cloud"
-    },
     "Qwen3-VL-8B-Instruct": {
         name: "Qwen/Qwen3-VL-8B-Instruct",
         displayName: "Qwen3-VL-8B-Instruct(￥2.00/M Tokens)",
@@ -52,11 +42,6 @@ const modelConfig = {
     "GLM-4.1V-9B-Thinking(Free)": {
         name: "THUDM/GLM-4.1V-9B-Thinking",
         displayName: "GLM-4.1V-9B-Thinking(￥0.00/M Tokens)",
-        provider: "cloud"
-    },
-    "GLM-4.1V-9B-Thinking(Paid)": {
-        name: "Pro/THUDM/GLM-4.1V-9B-Thinking",
-        displayName: "GLM-4.1V-9B-Thinking(￥1.00/M Tokens)",
         provider: "cloud"
     },
 };
@@ -82,14 +67,20 @@ function generateModelOptions() {
         option.dataset.provider = cfg.provider || 'cloud';
         modelSelect.appendChild(option);
     }
-    
-    // 添加"待添加"选项
-    const placeholderOption = document.createElement('option');
-    placeholderOption.value = 'other';
-    placeholderOption.textContent = '待添加';
-    placeholderOption.disabled = true;
-    modelSelect.appendChild(placeholderOption);
-    
+
+    // 添加分隔线
+    const separatorOpt = document.createElement('option');
+    separatorOpt.value = '';
+    separatorOpt.textContent = '──────────';
+    separatorOpt.disabled = true;
+    modelSelect.appendChild(separatorOpt);
+
+    // 添加"自己输入"选项
+    const customOption = document.createElement('option');
+    customOption.value = 'custom';
+    customOption.textContent = '自己输入模型代号...';
+    modelSelect.appendChild(customOption);
+
     // 从本地存储加载上次选择的模型
     loadSelectedModel();
 }
@@ -99,6 +90,11 @@ function saveSelectedModel(modelKey) {
     try {
         if (typeof localStorage !== 'undefined') {
             localStorage.setItem('selectedModel', modelKey);
+            // 如果是自定义模型，同时保存自定义模型名
+            if (modelKey === 'custom') {
+                const customInput = document.getElementById('customModelInput');
+                localStorage.setItem('customModelName', customInput ? customInput.value.trim() : '');
+            }
         }
     } catch (e) {
         console.error('Failed to save selected model to localStorage:', e);
@@ -112,10 +108,43 @@ function saveSelectedModel(modelKey) {
 function loadSelectedModel() {
     const modelSelect = document.getElementById('modelSelect');
     const savedModel = localStorage.getItem('selectedModel');
-    
-    if (savedModel && modelConfig[savedModel]) {
+
+    if (savedModel === 'custom') {
+        modelSelect.value = 'custom';
+        const customInput = document.getElementById('customModelInput');
+        const savedCustomName = localStorage.getItem('customModelName');
+        if (customInput && savedCustomName) {
+            customInput.value = savedCustomName;
+        }
+        toggleCustomModelInput();
+    } else if (savedModel && modelConfig[savedModel]) {
         modelSelect.value = savedModel;
     }
+}
+
+// 切换自定义模型输入框的显示/隐藏
+function toggleCustomModelInput() {
+    const customInput = document.getElementById('customModelInput');
+    if (customInput) {
+        customInput.style.display = 'block';
+    }
+}
+
+function hideCustomModelInput() {
+    const customInput = document.getElementById('customModelInput');
+    if (customInput) {
+        customInput.style.display = 'none';
+    }
+}
+
+// 获取当前选中的模型名称
+function getSelectedModelName() {
+    const modelSelect = document.getElementById('modelSelect');
+    if (modelSelect.value === 'custom') {
+        const customInput = document.getElementById('customModelInput');
+        return customInput ? customInput.value.trim() : '';
+    }
+    return modelConfig[modelSelect.value] ? modelConfig[modelSelect.value].name : '';
 }
 
 // 导出模型配置和相关函数
@@ -127,4 +156,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else if (typeof window !== 'undefined') {
     window.modelConfig = modelConfig;
     window.generateModelOptions = generateModelOptions;
+    window.saveSelectedModel = saveSelectedModel;
+    window.getSelectedModelName = getSelectedModelName;
+    window.toggleCustomModelInput = toggleCustomModelInput;
+    window.hideCustomModelInput = hideCustomModelInput;
 }

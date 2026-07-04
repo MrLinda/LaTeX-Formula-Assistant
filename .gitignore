@@ -9,7 +9,7 @@ __pycache__/
 venv/
 *.egg-info/
 
-# PyInstaller
+# PyInstaller / 打包产物
 build/output/
 dist/
 *.spec.bak
