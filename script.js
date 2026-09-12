@@ -91,6 +91,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 尝试从本地存储加载API密钥
     loadApiKey();
+
+    // 环境初始化完毕，交给可选的布局外壳（桌面版为 desktop.js，网页版无监听者）
+    document.dispatchEvent(new CustomEvent('app:ready'));
 });
 
 // 保存到历史记录

@@ -15,7 +15,10 @@ APP_NAME = "LaTeX-Formula-Assistant"
 APP_TITLE = "LaTeX 公式助手"
 
 # 前端资源相对应用根目录的位置。开发时和打包时布局保持一致，都在根目录。
-FRONTEND_FILES = ("index.html", "config.js", "script.js")
+# 这里登记的文件各注册一条顶层路由（index.html 由 index 路由特殊处理）。
+# desktop.css / desktop.js / desktop.html 不在此列：
+# 它们在服务 index 时被内联注入，不作为独立请求落到后端。
+FRONTEND_FILES = ("index.html", "config.js", "script.js", "styles.css")
 FRONTEND_DIRS = ("bootstrap", "temml")
 
 

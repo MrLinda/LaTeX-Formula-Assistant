@@ -56,9 +56,49 @@ def _serve_frontend_file(rel_path: str) -> Response:
     return FileResponse(target, media_type=_guess_media_type(target))
 
 
+# 桌面版专属的外壳资源：注入到共用 index.html，使同一份前端
+# 在桌面版呈现不同布局，而识别/渲染/历史等逻辑保持同源。
+DESKTOP_HEAD_ANCHOR = "<!-- DESKTOP_HEAD -->"
+DESKTOP_BODY_ANCHOR = "<!-- DESKTOP_BODY -->"
+
+
+def _read_desktop_asset(name: str) -> str:
+    """读取桌面版外壳资源；缺失时退回空串，保证应用仍能启动。"""
+    path = app_root() / name
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _inject_desktop_shell(html: str) -> str:
+    """把桌面版专属的样式/脚本/标记注入共用页面。
+
+    注入点由 index.html 里两个注释锚点决定，锚点缺失时原样返回。
+    """
+    head = _read_desktop_asset("desktop.css")
+    body = _read_desktop_asset("desktop.html")
+    script = _read_desktop_asset("desktop.js")
+
+    head_parts = []
+    if head:
+        head_parts.append(f"    <style>\n{head}\n    </style>")
+    if script:
+        head_parts.append(f"    <script>\n{script}\n    </script>")
+
+    if DESKTOP_HEAD_ANCHOR in html and head_parts:
+        html = html.replace(
+            DESKTOP_HEAD_ANCHOR,
+            "\n".join(head_parts),
+            1,
+        )
+    if DESKTOP_BODY_ANCHOR in html and body:
+        html = html.replace(DESKTOP_BODY_ANCHOR, body, 1)
+    return html
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> Response:
-    """返回 index.html，并在 <head> 注入 local-api-base 供前端拿到本地端口。"""
+    """返回 index.html，注入本地端口与桌面版布局外壳。"""
     root = app_root()
     index_path = root / "index.html"
     if not index_path.is_file():
@@ -77,6 +117,9 @@ async def index(request: Request) -> Response:
         flags=re.IGNORECASE,
     )
     html = html.replace("<head>", f"<head>\n    {meta}", 1)
+
+    # 注入桌面版布局（样式 + 外壳标记 + 外壳逻辑）
+    html = _inject_desktop_shell(html)
 
     return HTMLResponse(content=html)
 

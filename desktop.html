@@ -1,0 +1,71 @@
+<!-- desktop-shell：桌面版专属外壳，由 backend/server.py 注入到 <body> 之后。
+     网页版不会包含这段标记。 -->
+
+<!-- 桌面版三行布局骨架。
+     desktop.js 会把这个骨架搬进正文 .container 里、并隐藏被搬空的原始行，
+     再把共用元素按 id 填进各 data-slot。这里只放"容器"，不放内容：
+     输入框、下拉框、textarea 等始终是共用页面里那一份，不复制。
+     骨架在 html.desktop-ready 之前保持隐藏，避免搬动前闪现。 -->
+<div class="desktop-layout" id="desktopLayout">
+    <!-- 第一行：设置（左 API 密钥 / 右 选择模型），整张卡片搬入 -->
+    <div class="dl-row">
+        <div class="dl-cell dl-settings" data-slot="settings"></div>
+    </div>
+
+    <!-- 第二行：左 图片上传 / 右 LaTeX 代码 -->
+    <div class="dl-row">
+        <div class="dl-cell" data-slot="upload"></div>
+        <div class="dl-cell">
+            <div class="card">
+                <div class="card-header" data-slot="latex-header"></div>
+                <div class="card-body" data-slot="latex-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 第三行：公式预览（含复制按钮与 Tokens），占满一行 -->
+    <div class="dl-row">
+        <div class="dl-cell">
+            <div class="card">
+                <div class="card-header" data-slot="preview-header"></div>
+                <div class="card-body" data-slot="preview-body"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<aside id="historySidebar" class="history-sidebar" aria-label="历史记录">
+    <div class="history-sidebar-inner">
+        <div class="sidebar-header">
+            <button id="toggleHistorySidebar"
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    aria-controls="historySidebar"
+                    aria-expanded="true"
+                    title="折叠历史记录侧边栏">☰</button>
+            <button id="openInstructionsButton"
+                    class="btn btn-sm btn-outline-secondary btn-instructions"
+                    type="button">？ 使用说明</button>
+        </div>
+        <!-- 正文里的历史记录卡片会被 desktop.js 搬到这里 -->
+        <div id="historySidebarSlot" class="sidebar-slot"></div>
+    </div>
+</aside>
+
+<!-- 使用说明弹窗。正文由 desktop.js 从共用页面的说明卡片克隆，
+     文案只维护一份。 -->
+<div class="modal fade" id="instructionsModal" tabindex="-1"
+     aria-labelledby="instructionsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="instructionsModalLabel">使用说明</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">知道了</button>
+            </div>
+        </div>
+    </div>
+</div>

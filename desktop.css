@@ -1,0 +1,284 @@
+/* ==========================================================================
+   LaTeX 公式助手 —— 桌面版布局（Desktop-only）
+
+   本文件只由桌面版加载（backend/server.py 在注入时追加 <link>），
+   网页版既不会请求它，也不会带上 html.desktop-mode 类。
+
+   布局思路：直接让 body 成为横向 flex 容器 —— 侧边栏与正文是它的两个
+   流内子元素，其余 fixed/absolute 元素（遮罩、toast、模态框）本就不参与
+   流式布局，因此不需要任何额外的包裹 div，共用 HTML 保持原样。
+
+   设计目标：窗口内不出现整页滚动；历史记录移到可折叠侧边栏。
+   ========================================================================== */
+
+html.desktop-mode,
+html.desktop-mode body {
+    height: 100%;
+    overflow: hidden; /* 整页不滚动，改为正文区内部滚动 */
+}
+
+html.desktop-mode body {
+    display: flex;
+}
+
+/* 正文区：占据剩余宽度并自行滚动 */
+html.desktop-mode body > .container {
+    order: 1; /* 排在侧边栏之前（侧边栏在 DOM 里靠前，靠 order 摆到右边） */
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%; /* 桌面窗口用满宽度，不学网页版的居中窄栏 */
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-top: 0.75rem !important;
+}
+
+/* 窗口自带标题栏，页脚也去掉 */
+html.desktop-mode h1,
+html.desktop-mode body > footer {
+    display: none;
+}
+
+/* 使用说明卡片在桌面版改为弹窗触发 */
+html.desktop-mode #instructionsCard {
+    display: none;
+}
+
+/* 让内容区成为一个纵向 flex 容器，三行布局在其中伸缩：
+   正常窗口下把剩余高度给公式预览（避免底部大片空白），
+   最小窗口下预览自动收缩，从而任何尺寸都不出现滚动。 */
+html.desktop-mode body > .container {
+    display: flex;
+    flex-direction: column;
+}
+
+html.desktop-mode .desktop-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* 只有最后一行（公式预览）参与伸缩，前两行保持自然高度 */
+html.desktop-mode .dl-row:last-child {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+html.desktop-mode .dl-row:last-child .dl-cell,
+html.desktop-mode .dl-row:last-child .dl-cell > .card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+html.desktop-mode [data-slot="preview-body"] {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* 预览区吃掉剩余高度；下限保证小窗口下仍可用，
+   超出下限时由容器自行滚动兜底，不会把下面的按钮挤没 */
+html.desktop-mode [data-slot="preview-body"] .formula-display {
+    flex: 1 1 auto;
+    min-height: 80px;
+    max-height: none;
+    /* 共用样式是 20px，这里收窄：最小窗口下 80px 的框装不下 40px 内边距 + 公式 */
+    padding: 12px;
+}
+
+/* ---- 三行布局 ----
+   骨架在 desktop.html，共用元素由 desktop.js 填进各 data-slot。 */
+
+html.desktop-mode .desktop-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* 骨架搬进正文之前先藏住，避免闪现 */
+html.desktop-mode:not(.desktop-ready) #desktopLayout {
+    display: none;
+}
+
+html.desktop-mode .dl-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+html.desktop-mode .dl-cell {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+/* 同一行里的卡片等高 */
+html.desktop-mode .dl-cell > .card {
+    height: 100%;
+    margin-bottom: 0;
+}
+
+/* 被搬空的原始行不再占位（.row 自带 mt-4 之类的外边距） */
+html.desktop-mode .container > .row.dl-source-row {
+    display: none;
+}
+
+/* 第一行：设置卡片内部拆成左右两栏（左 API 密钥 / 右 选择模型） */
+html.desktop-mode .dl-settings .card-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+/* 两个区块原本上下排列，第二个带 mt-3；进栅格后要清掉上边距 */
+html.desktop-mode .dl-settings .card-body > * {
+    margin-top: 0 !important;
+}
+
+/* 第二行右侧：LaTeX 代码的 <label> 兼作卡片标题，去掉它原来的下边距 */
+html.desktop-mode [data-slot="latex-header"] label {
+    margin: 0 !important;
+}
+
+/* 第三行：原来那行"公式预览 + ⛶"整体成为标题行，去掉 mt-2 */
+html.desktop-mode [data-slot="preview-header"] > * {
+    margin-top: 0 !important;
+}
+
+/* ---- 历史记录侧边栏（位于窗口右侧） ---- */
+
+html.desktop-mode .history-sidebar {
+    display: flex;
+    flex-direction: column;
+    order: 2; /* 在 DOM 里位于正文之前，靠 order 摆到右边 */
+    flex: 0 0 320px;
+    width: 320px;
+    height: 100vh;
+    background: #f8f9fa;
+    border-left: 1px solid #dee2e6;
+    overflow: hidden;
+    transition: flex-basis 0.18s ease, width 0.18s ease;
+}
+
+/* 折叠后留 44px 的窄轨，☰ 按钮始终停在原位，不至于"找不到怎么展开" */
+html.desktop-mode .history-sidebar.collapsed {
+    flex-basis: 44px;
+    width: 44px;
+}
+
+/* 内层固定 320px：折叠时由外层裁切，内容不会跟着重新排版 */
+html.desktop-mode .history-sidebar-inner {
+    display: flex;
+    flex-direction: column;
+    width: 320px;
+    min-width: 320px;
+    height: 100%;
+    overflow: hidden;
+}
+
+html.desktop-mode .sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* "清空历史"被 desktop.js 搬到本行，推到行尾与左侧两个按钮分开。
+   flex 项忽略 float，styles.css 里的 .clear-history-btn 无需覆盖。 */
+html.desktop-mode .sidebar-header #clearHistoryButton {
+    margin-left: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+/* 折叠态只露出最左边的 ☰ 按钮 */
+html.desktop-mode .history-sidebar.collapsed .sidebar-header {
+    padding-left: 0.4rem;
+    padding-right: 0;
+}
+
+/* 折叠时藏起内容（用 visibility 而非 display，避免布局回流） */
+html.desktop-mode .history-sidebar.collapsed .btn-instructions,
+html.desktop-mode .history-sidebar.collapsed #clearHistoryButton,
+html.desktop-mode .history-sidebar.collapsed .sidebar-slot {
+    visibility: hidden;
+}
+
+html.desktop-mode .sidebar-slot {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 从正文搬进来的历史记录卡片：铺满侧边栏剩余高度，自己滚动 */
+html.desktop-mode .sidebar-slot .history-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin-top: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+}
+
+html.desktop-mode .sidebar-slot .history-container > .card-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 侧边栏标题行已经承载了标题和"清空历史"按钮，
+   卡片自己的标题行整行多余（h5 内容重复，按钮已被搬走）。
+   两个注意点：
+   1. .clear-btn-moved 由 desktop.js 在按钮确实搬进标题行后才加上 ——
+      条件不满足时保留标题行，避免按钮和标题行一起消失。
+   2. 该元素带 Bootstrap 的 .d-flex 工具类，而 .d-flex{display:flex!important}，
+      普通 display 覆盖不掉，这里必须同样用 !important。 */
+html.desktop-mode .history-sidebar.clear-btn-moved .sidebar-slot .history-container .card-header {
+    display: none !important;
+}
+
+html.desktop-mode .sidebar-slot .history-container .card-text {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+html.desktop-mode .sidebar-slot .history-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none; /* 由侧边栏高度决定，不用共用的 50vh */
+    overflow-y: auto;
+    background: #fff;
+}
+
+/* 侧边栏只有 320px，而公式宽度没有上限（实测出现过 424px 的）。
+   共用的 .history-formula 是 overflow: hidden，超宽公式会被静默裁掉 ——
+   在宽版式里少见，塞进窄侧边栏后就成了常态。
+   这里改成横向可滚动，保证内容不丢；展开按钮仍只负责解锁高度。 */
+html.desktop-mode .sidebar-slot .history-formula {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+}
+
+html.desktop-mode .sidebar-slot .history-formula::-webkit-scrollbar {
+    height: 6px;
+}
+
+html.desktop-mode .sidebar-slot .history-formula::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 3px;
+}
+
+/* ---- 首帧防闪 ----
+   desktop.js 把卡片搬进侧边栏之前，先藏住正文里的那张卡片。
+   用 visibility 保留占位，避免搬动引发回流。 */
+html.desktop-mode:not(.desktop-ready) .container .history-container {
+    visibility: hidden;
+}
