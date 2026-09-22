@@ -27,6 +27,60 @@ LaTeX公式识别助手是一个基于多模态大模型的工具，能够高效
 3. 在右侧查看和编辑LaTeX代码，预览公式效果。
 4. 点击“复制MathML”按钮，将公式转换为MathML格式并复制到剪贴板。
 
+## 桌面版
+
+网页版之外还提供桌面版：**PyWebView 窗口 + 本地 FastAPI 后端 + 与网页版共用的前端**。
+布局由后端注入（`desktop.css/html/js`），识别、渲染、历史记录等逻辑与网页版同源，不存在两份需要同步的代码。
+
+桌面版额外支持**本地公式识别**，无需 API 密钥、不联网、纯 CPU 推理。
+
+### 运行（开发）
+
+```powershell
+python main.py
+```
+
+或先激活虚拟环境再运行：
+
+```powershell
+.\.venv\Scripts\activate
+python main.py
+```
+
+> 注意：不要用 `python backend/main.py`。脚本模式下 `sys.path[0]` 是 `backend/` 目录，
+> 项目根目录不在搜索路径里，会报 `ModuleNotFoundError: No module named 'backend'`。
+
+### 本地模型
+
+| 项 | 说明 |
+| --- | --- |
+| 模型 | RapidLaTeXOCR（LaTeX-OCR 的 ONNX 版） |
+| 推理 | onnxruntime CPU，无需显卡 |
+| 体积 | 约 171MB，**首次使用时自动下载**，不打进安装包 |
+| 位置 | `%APPDATA%\LaTeX-Formula-Assistant\models\rapid-latex-ocr\` |
+| 速度 | 单张公式约 1–2 秒 |
+
+下载过程会显示百分比进度。模型文件按 SHA256 校验；直连 GitHub 不可用时会自动回退到镜像源。
+
+### 构建（Windows）
+
+```powershell
+.\build.ps1
+```
+
+产物在 `dist\` 下：
+
+- `LaTeX-Formula-Assistant\` —— onedir 绿色版，双击里面的 exe 即可运行
+- `LaTeX-Formula-Assistant.zip` —— 可直接分发的压缩包
+
+构建前需安装 PyInstaller：`uv pip install --python ".venv\Scripts\python.exe" pyinstaller`
+
+几点说明：
+
+- 采用 **onedir 而非 onefile**：onefile 每次启动都要把约 220MB 解压到临时目录，启动会慢好几秒。
+- 目前**没有配置图标**，用的是 PyInstaller 默认图标。
+- 排查打包期问题时，用 `$env:LFA_DEBUG_CONSOLE = "1"; .\build.ps1` 保留控制台窗口，可看到启动报错。
+
 ## 模型配置说明
 
 为了便于管理和扩展，模型配置已独立到单独的 `config.js` 文件中。
