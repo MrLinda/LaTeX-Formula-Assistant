@@ -16,6 +16,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // 监听粘贴事件
     document.addEventListener('paste', handlePaste);
 
+    // 拖拽上传：dragover 拦下文件拖入（浏览器才允许 drop，也不会把文件当页面打开），
+    // 只拦 Files —— 文本等其它拖拽行为保持浏览器默认
+    document.addEventListener('dragover', function(e) {
+        if (e.dataTransfer && Array.prototype.includes.call(e.dataTransfer.types || [], 'Files')) {
+            e.preventDefault();
+        }
+    });
+    document.addEventListener('drop', function(e) {
+        if (!e.dataTransfer || !Array.prototype.includes.call(e.dataTransfer.types || [], 'Files')) return;
+        e.preventDefault();
+        const file = e.dataTransfer.files && e.dataTransfer.files[0];
+        acceptImageFile(file);
+    });
+
     // 监听文件上传
     document.getElementById('imageUpload').addEventListener('change', handleFileSelect);
 
@@ -317,13 +331,17 @@ function handlePaste(e) {
     // 如果不是图片，允许正常粘贴
 }
 
-// 处理文件选择
+// 处理文件选择（点击选文件与拖拽落下的文件都走这里）
 function handleFileSelect(e) {
+    acceptImageFile(e.target.files[0]);
+}
+
+// 接收一张图片文件：非图片或正在识别时忽略
+function acceptImageFile(file) {
     if (isLoading) {
         return; // 如果正在加载，直接返回
     }
 
-    const file = e.target.files[0];
     if (file && file.type.startsWith('image/')) {
         // 显示加载动画
         showLoading();

@@ -5,26 +5,27 @@ LaTeX公式识别助手是一个基于多模态大模型的工具，能够高效
 
 ## 核心功能
 - **公式识别**：支持通过图片上传或粘贴识别LaTeX公式。
-- **实时预览**：在输入框中实时渲染公式效果。
-- **多模型支持**：支持Qwen2.5-VL-32B-Instruct和Qwen2.5-VL-7B-Instruct等模型。
+- **实时预览**：在输入框中实时渲染公式效果，预览卡片第一行可调节字号、支持自动适应宽度。
+- **多模型支持**：云端支持 Qwen3-VL 系列、GLM-4.1V（含免费）等模型，可在设置中切换提供商、模型，或自定义模型代号。
+- **三档主题**：亮色 / 暗色 / 自动跟随系统，设置按钮旁一键循环切换。
 - **MathML转换**：一键将LaTeX公式转换为MathML格式，方便在Word中使用。
-- **API密钥管理**：支持本地保存API密钥，方便下次使用。
-- **模型配置独立化**：模型配置已独立到单独的config.js文件中，便于管理和扩展。
+- **API密钥管理**：API密钥按提供商分开保存在本地，下次打开无需重新输入。
+- **模型配置独立化**：模型与提供商配置已独立到单独的config.js文件中，便于管理和扩展。
 - **智能标签处理**：自动去除模型返回的多余标签（如$$、```latex```、\\(、\\)、<|begin_of_box|>、<|end_of_box|>等），确保纯净的LaTeX代码。
 
 ## 使用方法
 ### 安装
-1. 下载项目的release包，解压到本地。
+1. 从 [Releases](https://github.com/MrLinda/LaTeX-Formula-Assistant/releases/latest) 下载最新的 release 包，解压到本地。
 2. 或者直接访问 [GitHub Page](https://latex.luxiaoxiao.work/) 使用在线版本。
 
 ### 配置
-1. 在页面左侧输入您的硅基流动API密钥，并点击“保存”。
+1. 打开设置弹窗（网页版点右上角、桌面版点历史侧边栏顶部的「⚙ 设置」），输入您的硅基流动 API 密钥，点击「完成」。
 2. API密钥将保存在本地存储中，下次打开页面无需重新输入。
 
 ### 使用
 1. 在页面空白处按 `Ctrl+V` 粘贴公式图片，或者拖拽图片到上传区域。
 2. 等待片刻，系统会自动识别公式并生成LaTeX代码。
-3. 在右侧查看和编辑LaTeX代码，预览公式效果。
+3. 在第一行右侧的输入框中查看和编辑LaTeX代码，第二行整行预览公式效果（预览卡片第一行可调字号）。
 4. 点击“复制MathML”按钮，将公式转换为MathML格式并复制到剪贴板。
 
 ## 桌面版
@@ -44,7 +45,11 @@ LaTeX公式识别助手是一个基于多模态大模型的工具，能够高效
 
 ### 运行（开发）
 
+首次运行前先在仓库根创建虚拟环境并安装桌面端依赖：
+
 ```powershell
+uv venv
+uv pip install --python ".venv\Scripts\python.exe" -r desktop/requirements.txt
 python desktop/main.py
 ```
 
@@ -126,20 +131,30 @@ const localModelConfig = {
 - **新本地模型**：在 `localModelConfig` 里加一项，`name` 需与 `backend/inference` 注册的模型 key 一致。
 
 ## 依赖项
-- **Bootstrap**：用于页面布局和样式。
-    - [Bootstrap](https://getbootstrap.com/)
-- **Temml**：用于LaTeX到MathML的转换。
-    - [Temml](https://temml.org/)
-- **多模态大模型**：
-    - Qwen2.5-VL-32B-Instruct
-    - Qwen2.5-VL-7B-Instruct
+- **前端（网页版与桌面版共用）**：
+    - [Bootstrap](https://getbootstrap.com/)：页面布局和样式（5.3，支持 `data-bs-theme` 亮暗主题）
+    - [Temml](https://temml.org/)：LaTeX 到 MathML 的转换
+- **多模态大模型**：云端模型列表以 `web/config.js` 的 `providerConfig` 为准，当前为：
+    - Qwen3-VL-8B / 30B-A3B / 32B-Instruct
+    - GLM-4.1V-9B-Thinking（免费）
+    - 桌面版另有本地 RapidLaTeXOCR（不依赖云端模型）
+- **桌面版（Python ≥3.10,<3.13，运行时清单见 `desktop/requirements.txt`，打进最终 exe）**：
+    - pywebview —— 窗口外壳
+    - FastAPI + Uvicorn —— 本地后端
+    - onnxruntime + rapid_latex_ocr —— 本地公式识别（含 numpy<2、opencv-python<5 等兼容性版本锁，原因见清单内注释）
+    - Pillow / tokenizers / ftfy / requests / tqdm / PyYAML / chardet —— 识别链路的传递依赖
+- **桌面版开发/构建期（`desktop/requirements-dev.txt`，不打进 exe）**：
+    - PyInstaller —— 打包
+    - paddlepaddle / paddleocr / paddle2onnx / onnx —— 本地模型 Paddle → ONNX 转换链路
 
 
 ## 常见问题
 - **Q: 如何解决API密钥无效的问题？**
     - A: 确保您输入的API密钥正确，并检查网络连接。
 - **Q: 如何切换不同的模型？**
-    - A: 在页面左侧的“选择模型”下拉框中选择所需的模型。
+    - A: 打开「⚙ 设置」弹窗，在“选择模型”下拉框中选择；也可先切换提供商再选模型。
+- **Q: 如何切换亮暗主题？**
+    - A: 点击设置按钮旁的主题按钮，在 亮色 → 暗色 → 自动（跟随系统）三档间循环。
 - **Q: 为什么公式渲染失败？**
     - A: 检查LaTeX代码是否正确，或者尝试更换图片。
 
