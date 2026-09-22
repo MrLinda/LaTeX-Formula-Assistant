@@ -16,3 +16,6 @@ dist/
 
 # 本地开发时的模型缓存
 models_local/
+
+# 本地工具状态（AI 助手的会话笔记等，不属于项目产物）
+.workbuddy/
