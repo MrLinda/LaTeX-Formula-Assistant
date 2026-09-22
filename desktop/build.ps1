@@ -1,26 +1,28 @@
 # 构建 onedir 绿色版，并压成 zip。
 #
-# 用法（项目根目录）：
-#     .\build.ps1
+# 用法（仓库根目录）：
+#     .\desktop\build.ps1
 #
-# 成功后 dist\ 下会得到：
+# 成功后 desktop\dist\ 下会得到：
 #     LaTeX-Formula-Assistant\       可双击运行的自包含目录
 #     LaTeX-Formula-Assistant.zip    可直接分发的压缩包
 #
 # 排查打包期问题时加控制台：
-#     $env:LFA_DEBUG_CONSOLE = "1"; .\build.ps1
+#     $env:LFA_DEBUG_CONSOLE = "1"; .\desktop\build.ps1
 
 $ErrorActionPreference = "Stop"
-Set-Location -LiteralPath $PSScriptRoot
+Set-Location -LiteralPath $PSScriptRoot   # desktop/，spec 与产物都在这
 
-$python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+# 虚拟环境在仓库根目录（desktop 的上一级）
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $python)) {
-    throw "未找到 .venv。请先创建虚拟环境并安装依赖。"
+    throw "未找到 .venv（$repoRoot\.venv）。请先在仓库根创建虚拟环境并安装依赖。"
 }
 
 & $python -c "import PyInstaller" 2>$null
 if ($LASTEXITCODE -ne 0) {
-    throw "未安装 PyInstaller。请执行：uv pip install --python `".venv\Scripts\python.exe`" pyinstaller"
+    throw "未安装 PyInstaller。请执行：uv pip install --python `"$python`" pyinstaller"
 }
 
 Write-Host "==> 清理旧产物"

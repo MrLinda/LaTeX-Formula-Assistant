@@ -30,6 +30,14 @@ LaTeX公式识别助手是一个基于多模态大模型的工具，能够高效
 ## 桌面版
 
 网页版之外还提供桌面版：**PyWebView 窗口 + 本地 FastAPI 后端 + 与网页版共用的前端**。
+
+仓库按用途分为两个目录：
+
+| 目录 | 内容 |
+| --- | --- |
+| `web/` | 共享前端（网页版与桌面版同源），GitHub Pages 通过 Actions 只发布这个目录 |
+| `desktop/` | 桌面版外壳（`desktop.css/html/js`）、FastAPI 后端与打包配置 |
+
 布局由后端注入（`desktop.css/html/js`），识别、渲染、历史记录等逻辑与网页版同源，不存在两份需要同步的代码。
 
 桌面版额外支持**本地公式识别**，无需 API 密钥、不联网、纯 CPU 推理。
@@ -37,18 +45,18 @@ LaTeX公式识别助手是一个基于多模态大模型的工具，能够高效
 ### 运行（开发）
 
 ```powershell
-python main.py
+python desktop/main.py
 ```
 
-或先激活虚拟环境再运行：
+或先激活虚拟环境再运行（`.venv` 在仓库根目录）：
 
 ```powershell
 .\.venv\Scripts\activate
-python main.py
+python desktop/main.py
 ```
 
-> 注意：不要用 `python backend/main.py`。脚本模式下 `sys.path[0]` 是 `backend/` 目录，
-> 项目根目录不在搜索路径里，会报 `ModuleNotFoundError: No module named 'backend'`。
+> 注意：不要用 `python desktop/backend/main.py`。脚本模式下 `sys.path[0]` 是 `desktop/backend/` 目录，
+> 项目根不在搜索路径里，会报 `ModuleNotFoundError: No module named 'backend'`。
 
 ### 本地模型
 
@@ -65,10 +73,10 @@ python main.py
 ### 构建（Windows）
 
 ```powershell
-.\build.ps1
+.\desktop\build.ps1
 ```
 
-产物在 `dist\` 下：
+产物在 `desktop\dist\` 下：
 
 - `LaTeX-Formula-Assistant\` —— onedir 绿色版，双击里面的 exe 即可运行
 - `LaTeX-Formula-Assistant.zip` —— 可直接分发的压缩包
@@ -79,11 +87,11 @@ python main.py
 
 - 采用 **onedir 而非 onefile**：onefile 每次启动都要把约 220MB 解压到临时目录，启动会慢好几秒。
 - 目前**没有配置图标**，用的是 PyInstaller 默认图标。
-- 排查打包期问题时，用 `$env:LFA_DEBUG_CONSOLE = "1"; .\build.ps1` 保留控制台窗口，可看到启动报错。
+- 排查打包期问题时，用 `$env:LFA_DEBUG_CONSOLE = "1"; .\desktop\build.ps1` 保留控制台窗口，可看到启动报错。
 
 ## 模型配置说明
 
-为了便于管理和扩展，模型配置已独立到单独的 `config.js` 文件中。
+为了便于管理和扩展，模型配置已独立到单独的 `web/config.js` 文件中。
 
 ### 配置文件结构
 

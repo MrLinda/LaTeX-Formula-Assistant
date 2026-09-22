@@ -19,7 +19,8 @@ from backend.config import (
     APP_TITLE,
     FRONTEND_DIRS,
     FRONTEND_FILES,
-    app_root,
+    desktop_assets_dir,
+    web_root,
 )
 
 
@@ -47,8 +48,8 @@ def _guess_media_type(path: Path) -> str:
 
 
 def _serve_frontend_file(rel_path: str) -> Response:
-    """从 app_root() 下服务前端文件，做路径遍历防护。"""
-    root = app_root()
+    """从 web_root() 下服务前端文件，做路径遍历防护。"""
+    root = web_root()
     target = (root / rel_path).resolve()
     try:
         target.relative_to(root.resolve())
@@ -67,7 +68,7 @@ DESKTOP_BODY_ANCHOR = "<!-- DESKTOP_BODY -->"
 
 def _read_desktop_asset(name: str) -> str:
     """读取桌面版外壳资源；缺失时退回空串，保证应用仍能启动。"""
-    path = app_root() / name
+    path = desktop_assets_dir() / name
     if not path.is_file():
         return ""
     return path.read_text(encoding="utf-8")
@@ -102,8 +103,7 @@ def _inject_desktop_shell(html: str) -> str:
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> Response:
     """返回 index.html，注入本地端口与桌面版布局外壳。"""
-    root = app_root()
-    index_path = root / "index.html"
+    index_path = web_root() / "index.html"
     if not index_path.is_file():
         raise HTTPException(status_code=500, detail="index.html not found")
 

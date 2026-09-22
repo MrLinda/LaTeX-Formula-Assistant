@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置（onedir 绿色版）。
+r"""PyInstaller 打包配置（onedir 绿色版）。
 
-构建：
-    .venv\\Scripts\\python.exe -m PyInstaller --noconfirm LaTeXFormulaAssistant.spec
+构建（推荐用仓库根的 build.ps1，它会处理 venv 路径）：
+    ..\..\\.venv\Scripts\python.exe -m PyInstaller --noconfirm LaTeXFormulaAssistant.spec
 产物：
     dist/<APP_NAME>/<APP_NAME>.exe
 
@@ -12,6 +12,8 @@
 - 模型不打进包：模型按需下载到用户数据目录，包体积因此与模型解耦。
 - 前端资源清单从 backend.config 派生：以后新增前端文件只要按既有约定登记，
   就不会出现「后端能路由、打包却漏了文件」的静默降级。
+- 打包布局与仓库布局一致（<根>/web/ 与 <根>/desktop/），
+  使 backend.config 的路径函数在开发与打包两种模式下无需分支。
 - 控制台默认关闭（GUI 应用）；排查打包问题时设 LFA_DEBUG_CONSOLE=1 保留控制台。
 """
 
@@ -21,7 +23,10 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+# spec 位于 desktop/：ROOT = desktop/（backend 包与入口 main.py 所在）
 ROOT = Path(SPECPATH).resolve()
+REPO_ROOT = ROOT.parent
+WEB_ROOT = REPO_ROOT / "web"
 sys.path.insert(0, str(ROOT))
 
 from backend.config import APP_NAME, FRONTEND_DIRS, FRONTEND_FILES  # noqa: E402
@@ -34,10 +39,12 @@ DESKTOP_ASSETS = ("desktop.css", "desktop.html", "desktop.js")
 DEBUG_CONSOLE = os.environ.get("LFA_DEBUG_CONSOLE") == "1"
 
 datas = []
-for _name in list(FRONTEND_FILES) + list(DESKTOP_ASSETS):
-    datas.append((str(ROOT / _name), "."))
+for _name in FRONTEND_FILES:
+    datas.append((str(WEB_ROOT / _name), "web"))
+for _name in DESKTOP_ASSETS:
+    datas.append((str(ROOT / _name), "desktop"))
 for _name in FRONTEND_DIRS:
-    datas.append((str(ROOT / _name), _name))
+    datas.append((str(WEB_ROOT / _name), f"web/{_name}"))
 
 # rapid_latex_ocr 的 config.yaml 属于包数据，不显式收集会缺失
 datas += collect_data_files("rapid_latex_ocr")
