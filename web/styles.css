@@ -5,10 +5,10 @@
    ========================================================================== */
 
 .formula-display {
-    border: 1px solid #ddd;
+    border: 1px solid var(--bs-border-color);
     padding: 20px;
-    min-height: 100px;
-    max-height: 25vh;
+    min-height: 200px;
+    max-height: 50vh;
     margin-top: 15px;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
@@ -28,11 +28,21 @@
     text-align: right;
 }
 
-/* Bootstrap 的 .form-range 是 width:100%，在 flex 行里会把其余控件挤出去 */
+/* 预览区第一行里的字号滑块：限宽，避免在行内无限拉伸 */
 .formula-font-size-range {
-    flex: 1 1 auto;
-    width: auto;
-    min-width: 8rem;
+    flex: 0 0 9rem;
+    width: 9rem;
+    min-width: 6rem;
+}
+
+/* 轨道默认 --bs-tertiary-bg（亮色 #f8f9fa）与白卡片几乎无对比，
+   换成深一档的 --bs-secondary-bg；该变量在暗色主题下自动跟随 */
+.formula-font-size-range::-webkit-slider-runnable-track {
+    background-color: var(--bs-secondary-bg);
+}
+
+.formula-font-size-range::-moz-range-track {
+    background-color: var(--bs-secondary-bg);
 }
 
 .image-preview {
@@ -74,26 +84,26 @@
 .history-list {
     max-height: 50vh;
     overflow-y: auto;
-    border: 1px solid #ddd;
+    border: 1px solid var(--bs-border-color);
     border-radius: 0.375rem;
-    /* 自定义滚动条样式 */
+    /* 自定义滚动条样式（颜色走主题变量，暗色下自动跟随） */
     scrollbar-width: thin; /* Firefox */
-    scrollbar-color: #ccc #f8f9fa; /* Firefox */
+    scrollbar-color: var(--bs-secondary-color) var(--bs-tertiary-bg); /* Firefox */
 }
 /* Webkit 浏览器滚动条样式 */
 .history-list::-webkit-scrollbar {
     width: 8px;
 }
 .history-list::-webkit-scrollbar-track {
-    background: #f8f9fa;
+    background: var(--bs-tertiary-bg);
     border-radius: 4px;
 }
 .history-list::-webkit-scrollbar-thumb {
-    background: #ccc;
+    background: var(--bs-secondary-color);
     border-radius: 4px;
 }
 .history-list::-webkit-scrollbar-thumb:hover {
-    background: #aaa;
+    background: var(--bs-emphasis-color);
 }
 .history-list .list-group-item {
     border-left: none;
@@ -123,7 +133,7 @@
 .history-empty {
     padding: 20px;
     text-align: center;
-    color: #6c757d;
+    color: var(--bs-secondary-color);
 }
 
 /* ---- 公式预览弹窗 ---- */
@@ -140,7 +150,8 @@
     align-items: center;
 }
 .modal-preview-content {
-    background: #fff;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
     border-radius: 8px;
     width: 80vw;
     height: 80vh;
@@ -154,13 +165,13 @@
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid var(--bs-border-color);
     font-size: 1.1rem;
     font-weight: 500;
 }
 .btn-close-custom {
     background: none;
-    border: 1px solid #ccc;
+    border: 1px solid var(--bs-border-color);
     border-radius: 50%;
     width: 32px;
     height: 32px;
@@ -171,7 +182,7 @@
     justify-content: center;
 }
 .btn-close-custom:hover {
-    background-color: #f0f0f0;
+    background-color: var(--bs-tertiary-bg);
 }
 .formula-preview-fullscreen {
     flex: 1;
@@ -185,4 +196,29 @@
 
 .clear-history-btn {
     float: right;
+}
+
+/* ---- 页头与设置入口 ----
+   标题保持水平居中：按钮装进 .page-header-actions 绝对定位挂在右侧，
+   不参与挤压。只在 .page-header 内生效 —— 桌面版会把两个按钮（主题、设置）
+   逐个搬进侧边栏标题行，搬走后本规则自然失效，按钮恢复常规布局。 */
+.page-header {
+    position: relative;
+}
+
+.page-header .page-header-actions {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+/* ---- 版本差异文案 ----
+   使用说明等共用文案里，.only-web / .only-desktop 标注只在某一端成立的说法。
+   网页版默认只显示 .only-web；桌面版由 desktop.css 翻转（选择器优先级更高）。 */
+.only-desktop {
+    display: none;
 }

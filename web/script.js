@@ -51,9 +51,9 @@ document.addEventListener('DOMContentLoaded', function() {
         showToast('历史记录已清空');
     });
 
-    // 初始化模型选择下拉框
-    if (typeof generateModelOptions === 'function') {
-        generateModelOptions();
+    // 初始化设置弹窗内容（迁移旧配置、填充提供商/云端模型/本地模型下拉）
+    if (typeof initSettingsUI === 'function') {
+        initSettingsUI();
     }
     
     // 监听模型选择变化
@@ -79,6 +79,46 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // 监听提供商切换：模型下拉按新提供商重建，密钥框载入该提供商的密钥
+    document.getElementById('providerSelect').addEventListener('change', function() {
+        if (typeof saveSelectedProvider === 'function') {
+            saveSelectedProvider(this.value);
+        }
+        if (typeof generateModelOptions === 'function') {
+            generateModelOptions();
+        }
+        loadApiKey();
+        if (typeof applySettingsVisibility === 'function') {
+            applySettingsVisibility();
+        }
+    });
+
+    // 监听识别方式切换（本地 / 云端，仅桌面版显示该选项）
+    document.querySelectorAll('input[name="recognizeMode"]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            if (!this.checked) return;
+            if (typeof setRecognizeMode === 'function') setRecognizeMode(this.value);
+            if (typeof applySettingsVisibility === 'function') applySettingsVisibility();
+        });
+    });
+
+    // 监听本地模型选择（仅桌面版）
+    const localModelSelect = document.getElementById('localModelSelect');
+    if (localModelSelect) {
+        localModelSelect.addEventListener('change', function() {
+            try { localStorage.setItem('selectedLocalModel', this.value); } catch (_) { /* 存不上不影响本次使用 */ }
+        });
+    }
+
+    // 打开设置弹窗（backdrop 为 static：点外面不关闭，只有 × 和「完成」能关）
+    document.getElementById('openSettingsButton').addEventListener('click', function() {
+        const modalEl = document.getElementById('settingsModal');
+        if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+
+    // 初始化主题三档切换（亮 / 暗 / 自动，head 里的提前脚本已落过首帧）
+    initThemeToggle();
+
     // 初始化公式字号设置（须在 renderLaTeX 之前，保证首帧就按设置渲染）
     initFormulaFontSizeSettings();
 
@@ -98,6 +138,69 @@ document.addEventListener('DOMContentLoaded', function() {
     // 环境初始化完毕，交给可选的布局外壳（桌面版为 desktop.js，网页版无监听者）
     document.dispatchEvent(new CustomEvent('app:ready'));
 });
+
+/* ==========================================================================
+   主题三档切换（亮色 / 暗色 / 自动跟随系统）
+   存储键 themeMode：'light' | 'dark' | 'auto'（缺省视为 auto）。
+   实际生效的亮暗写在 <html data-bs-theme>，index.html 头部脚本负责首帧防闪。
+   ========================================================================== */
+const THEME_KEY = 'themeMode';
+const THEME_ORDER = ['light', 'dark', 'auto'];
+const THEME_META = {
+    light: { icon: '☀', label: '亮色' },
+    dark:  { icon: '🌙', label: '暗色' },
+    auto:  { icon: '🖥', label: '自动' }
+};
+
+function getThemeMode() {
+    try {
+        const mode = localStorage.getItem(THEME_KEY);
+        if (THEME_ORDER.includes(mode)) return mode;
+    } catch (_) { /* 存储不可用则退回自动 */ }
+    return 'auto';
+}
+
+// 三档 -> 实际亮暗（auto 查系统偏好）
+function resolveTheme(mode) {
+    if (mode !== 'auto') return mode;
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+}
+
+function applyTheme() {
+    const mode = getThemeMode();
+    document.documentElement.setAttribute('data-bs-theme', resolveTheme(mode));
+
+    const btn = document.getElementById('themeToggleButton');
+    if (btn) {
+        const meta = THEME_META[mode];
+        const next = THEME_META[THEME_ORDER[(THEME_ORDER.indexOf(mode) + 1) % THEME_ORDER.length]];
+        btn.innerHTML = meta.icon + '<span class="theme-label"> ' + meta.label + '</span>';
+        btn.title = '主题：' + meta.label + '（点击切换为' + next.label + '）';
+        btn.setAttribute('aria-label', btn.title);
+    }
+}
+
+function initThemeToggle() {
+    const btn = document.getElementById('themeToggleButton');
+    if (btn) {
+        btn.addEventListener('click', function() {
+            const next = THEME_ORDER[(THEME_ORDER.indexOf(getThemeMode()) + 1) % THEME_ORDER.length];
+            try { localStorage.setItem(THEME_KEY, next); } catch (_) { /* 存不上仍可切换本次 */ }
+            applyTheme();
+        });
+    }
+    applyTheme(); // 同步按钮文案；首帧属性由 head 脚本落过，这里幂等重写
+
+    // 「自动」档跟随系统深浅色实时切换
+    if (window.matchMedia) {
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        const onSystemChange = function() {
+            if (getThemeMode() === 'auto') applyTheme();
+        };
+        if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onSystemChange);
+        else if (typeof mq.addListener === 'function') mq.addListener(onSystemChange);
+    }
+}
 
 // 保存到历史记录
 function saveToHistory(latexCode) {
@@ -142,27 +245,25 @@ function loadHistory() {
     }
 }
 
-// 保存API密钥
+// 保存API密钥（按当前选中的提供商分开存：apiKey_<providerId>）
 function saveApiKey() {
     const apiKeyInput = document.getElementById('apiKeyInput');
     const apiKey = apiKeyInput.value.trim();
 
     if (apiKey) {
-        localStorage.setItem('apiKey', apiKey);
+        localStorage.setItem(apiKeyStorageKey(getSelectedProviderId()), apiKey);
         showAlert('API密钥已保存！');
     } else {
         showAlert('请输入有效的API密钥');
     }
 }
 
-// 加载API密钥
+// 加载API密钥（初始化与切换提供商时都调用，载入当前提供商的密钥）
 function loadApiKey() {
     const apiKeyInput = document.getElementById('apiKeyInput');
-    const savedApiKey = localStorage.getItem('apiKey');
+    const savedApiKey = localStorage.getItem(apiKeyStorageKey(getSelectedProviderId()));
 
-    if (savedApiKey) {
-        apiKeyInput.value = savedApiKey;
-    }
+    apiKeyInput.value = savedApiKey || '';
 }
 
 // 处理粘贴事件
@@ -248,15 +349,10 @@ function processImage(file) {
     reader.readAsDataURL(file);
 }
 
-// 调用识别 API：根据当前选中模型的 provider 分流到云端或本地
+// 调用识别 API：按"识别方式"分流 —— local 走桌面版本地推理，cloud 走当前云端提供商
 async function callCustomAPI(base64Data) {
-    const modelSelect = document.getElementById('modelSelect');
-    const modelKey = modelSelect.value;
-    const cfg = modelConfig[modelKey];
-    const provider = cfg && cfg.provider ? cfg.provider : 'cloud';
-
-    if (provider === 'local') {
-        return callLocalAPI(base64Data, cfg.name);
+    if (typeof getRecognizeMode === 'function' && getRecognizeMode() === 'local') {
+        return callLocalAPI(base64Data, getSelectedLocalModelName());
     }
     return callCloudAPI(base64Data);
 }
@@ -427,6 +523,9 @@ async function reportCloudAPIError(response) {
 
     const balanceKeywords = /余额|balance|arrears|insufficient|quota|欠费|payment|充值/i;
     const status = response.status;
+    const providerName = (typeof getSelectedProvider === 'function' && getSelectedProvider())
+        ? getSelectedProvider().name
+        : '云端服务';
 
     // 401: 未授权 → API 密钥错误
     if (status === 401) {
@@ -434,18 +533,18 @@ async function reportCloudAPIError(response) {
     }
     // 402: 需要付款 → 明确的余额不足
     if (status === 402) {
-        return showAlert('账户余额不足，请到 SiliconFlow 充值后重试。');
+        return showAlert(`账户余额不足，请到 ${providerName} 充值后重试。`);
     }
     // 403: 权限被拒 → 可能是余额、账号、模型未开通
     if (status === 403) {
         if (balanceKeywords.test(detailMsg)) {
-            return showAlert('账户余额不足，请到 SiliconFlow 充值后重试。');
+            return showAlert(`账户余额不足，请到 ${providerName} 充值后重试。`);
         }
         return showAlert('访问被拒绝：' + (detailMsg || '当前 API 密钥无权访问该模型。'));
     }
     // 404: 模型不存在 → 模型配置错误
     if (status === 404) {
-        return showAlert('模型不存在或未开通：请检查所选模型在 SiliconFlow 是否可用。');
+        return showAlert(`模型不存在或未开通：请检查所选模型在 ${providerName} 是否可用。`);
     }
     // 400: 请求参数错误 → 通常是模型配置或图片有问题
     if (status === 400) {
@@ -458,13 +557,13 @@ async function reportCloudAPIError(response) {
     // 429: 速率限制，部分服务商也用它表示余额不足
     if (status === 429) {
         if (balanceKeywords.test(detailMsg)) {
-            return showAlert('账户余额不足，请到 SiliconFlow 充值后重试。');
+            return showAlert(`账户余额不足，请到 ${providerName} 充值后重试。`);
         }
         return showAlert('请求过于频繁，请稍后重试。');
     }
     // 5xx: 服务端错误
     if (status >= 500 && status < 600) {
-        return showAlert(`SiliconFlow 服务端错误（${status}），请稍后重试。`);
+        return showAlert(`${providerName} 服务端错误（${status}），请稍后重试。`);
     }
     // 其它未知
     return showAlert(`未知错误（HTTP ${status}）：${detailMsg || '请检查网络与配置。'}`);
@@ -478,24 +577,29 @@ async function callCloudAPI(base64Data) {
         return showAlert('网络连接错误：当前无网络，请检查网络后重试。');
     }
 
+    const provider = typeof getSelectedProvider === 'function' ? getSelectedProvider() : null;
+    const providerName = provider ? provider.name : '云端服务';
+
     // ---- 预检查：API 密钥 ----
     const apiKey = document.getElementById('apiKeyInput').value.trim();
     if (!apiKey) {
         hideLoading();
-        return showAlert('API 密钥为空：请先在左侧输入 SiliconFlow API 密钥并保存。');
+        return showAlert(`API 密钥为空：请打开「⚙ 设置」，填写${providerName} API 密钥并保存。`);
     }
 
     // ---- 预检查：模型配置（兼容自定义模型代号） ----
-    const modelSelect = document.getElementById('modelSelect');
-    const modelName = typeof getSelectedModelName === 'function'
-        ? getSelectedModelName()
-        : (modelConfig[modelSelect.value] && modelConfig[modelSelect.value].name);
+    const modelName = typeof getSelectedModelName === 'function' ? getSelectedModelName() : '';
     if (!modelName) {
         hideLoading();
         return showAlert('模型配置错误：请选择有效模型或填写自定义模型代号。');
     }
 
-    const url = "https://api.siliconflow.cn/v1/chat/completions";
+    // ---- 提供商接口地址（来自 providerConfig） ----
+    const url = provider ? provider.apiUrl : '';
+    if (!url) {
+        hideLoading();
+        return showAlert('提供商配置错误：缺少接口地址，请检查 config.js。');
+    }
     const prompts = "请把图中的公式转成LaTeX格式，不要输出任何额外内容。";
 
     // ---- 发起请求，隔离网络层错误 ----
@@ -543,7 +647,7 @@ async function callCloudAPI(base64Data) {
         hideLoading();
         // fetch 抛异常通常是网络层问题：DNS 失败、断网、CORS、TLS 等
         if (error instanceof TypeError) {
-            return showAlert('网络连接错误：无法连接到 SiliconFlow，请检查网络或代理。');
+            return showAlert(`网络连接错误：无法连接到 ${providerName}，请检查网络或代理。`);
         }
         return showAlert('未知错误：' + (error.message || String(error)));
     }
@@ -561,7 +665,7 @@ async function callCloudAPI(base64Data) {
     } catch (error) {
         console.error('[Cloud API] JSON parse error:', error);
         hideLoading();
-        return showAlert('未知错误：SiliconFlow 返回了无法解析的响应。');
+        return showAlert(`未知错误：${providerName} 返回了无法解析的响应。`);
     }
 
     hideLoading();

@@ -91,37 +91,39 @@ python desktop/main.py
 
 ## 模型配置说明
 
-为了便于管理和扩展，模型配置已独立到单独的 `web/config.js` 文件中。
+模型与提供商配置独立在 `web/config.js` 文件中，设置弹窗（识别方式、提供商、模型、API 密钥）都从它派生。
 
 ### 配置文件结构
 
 ```javascript
-const modelConfig = {
-    "模型标识符": {
-        name: "实际模型名称",
-        displayName: "显示名称"
+// 云端提供商：key = 提供商 id（密钥按 apiKey_<id> 分开存）
+const providerConfig = {
+    siliconflow: {
+        name: "硅基流动",
+        apiUrl: "https://api.siliconflow.cn/v1/chat/completions",
+        models: {
+            "Qwen3-VL-8B-Instruct": {
+                name: "Qwen/Qwen3-VL-8B-Instruct",
+                displayName: "Qwen3-VL-8B-Instruct(￥2.00/M Tokens)"
+            }
+        }
+    }
+};
+
+// 本地模型（仅桌面版，按需下载）
+const localModelConfig = {
+    "rapid-latex-ocr": {
+        name: "rapid-latex-ocr",
+        displayName: "RapidLaTeXOCR（本地·CPU·171MB）"
     }
 };
 ```
 
-### 添加新模型
+### 添加新提供商 / 新模型
 
-只需在 `modelConfig` 对象中添加新的模型配置即可，系统会自动在界面中显示。
-
-### 示例
-
-```javascript
-const modelConfig = {
-    "Qwen2.5-VL-32B": {
-        name: "Qwen/Qwen2.5-VL-32B-Instruct",
-        displayName: "Qwen2.5-VL-32B"
-    },
-    "Qwen2.5-VL-7B": {
-        name: "Pro/Qwen/Qwen2.5-VL-7B-Instruct",
-        displayName: "Qwen2.5-VL-7B"
-    },
-};
-```
+- **新云端厂商**：在 `providerConfig` 里加一条（`name` / `apiUrl` / `models`），设置弹窗的"提供商"下拉会自动出现。
+- **厂商下新模型**：在该厂商的 `models` 里加一项即可，模型下拉自动显示。
+- **新本地模型**：在 `localModelConfig` 里加一项，`name` 需与 `backend/inference` 注册的模型 key 一致。
 
 ## 依赖项
 - **Bootstrap**：用于页面布局和样式。

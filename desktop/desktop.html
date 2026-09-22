@@ -1,18 +1,15 @@
 <!-- desktop-shell：桌面版专属外壳，由 backend/server.py 注入到 <body> 之后。
      网页版不会包含这段标记。 -->
 
-<!-- 桌面版三行布局骨架。
+<!-- 桌面版两行布局骨架。
      desktop.js 会把这个骨架搬进正文 .container 里、并隐藏被搬空的原始行，
      再把共用元素按 id 填进各 data-slot。这里只放"容器"，不放内容：
      输入框、下拉框、textarea 等始终是共用页面里那一份，不复制。
+     设置已改为共用弹窗（settingsModal），不占骨架的行；
+     "⚙ 设置"按钮由 desktop.js 搬到下方侧边栏标题行。
      骨架在 html.desktop-ready 之前保持隐藏，避免搬动前闪现。 -->
 <div class="desktop-layout" id="desktopLayout">
-    <!-- 第一行：设置（左 API 密钥 / 右 选择模型），整张卡片搬入 -->
-    <div class="dl-row">
-        <div class="dl-cell dl-settings" data-slot="settings"></div>
-    </div>
-
-    <!-- 第二行：左 图片上传 / 右 LaTeX 代码 -->
+    <!-- 第一行：左 图片上传 / 右 LaTeX 代码 -->
     <div class="dl-row">
         <div class="dl-cell" data-slot="upload"></div>
         <div class="dl-cell">
@@ -23,7 +20,7 @@
         </div>
     </div>
 
-    <!-- 第三行：公式预览（含复制按钮与 Tokens），占满一行 -->
+    <!-- 第二行：公式预览（含复制按钮与 Tokens），占满一行 -->
     <div class="dl-row">
         <div class="dl-cell">
             <div class="card">

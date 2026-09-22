@@ -32,14 +32,26 @@ html.desktop-mode body > .container {
     margin-top: 0.75rem !important;
 }
 
-/* 窗口自带标题栏，页脚也去掉 */
+/* 窗口自带标题栏，页头与页脚也去掉。
+   页头里的"⚙ 设置"按钮由 desktop.js 搬进侧边栏标题行，
+   搬走后不再受本规则约束。 */
 html.desktop-mode h1,
-html.desktop-mode body > footer {
+html.desktop-mode body > footer,
+html.desktop-mode .page-header {
     display: none;
 }
 
 /* 使用说明卡片在桌面版改为弹窗触发 */
 html.desktop-mode #instructionsCard {
+    display: none;
+}
+
+/* 版本差异文案：桌面版翻转 styles.css 的默认值（说明克隆进弹窗后同样生效） */
+html.desktop-mode .only-desktop {
+    display: inline;
+}
+
+html.desktop-mode .only-web {
     display: none;
 }
 
@@ -86,8 +98,9 @@ html.desktop-mode [data-slot="preview-body"] .formula-display {
     padding: 12px;
 }
 
-/* ---- 三行布局 ----
-   骨架在 desktop.html，共用元素由 desktop.js 填进各 data-slot。 */
+/* ---- 两行布局 ----
+   骨架在 desktop.html，共用元素由 desktop.js 填进各 data-slot。
+   设置已挪进共用弹窗（settingsModal），不再占一行。 */
 
 html.desktop-mode .desktop-layout {
     display: flex;
@@ -122,31 +135,12 @@ html.desktop-mode .container > .row.dl-source-row {
     display: none;
 }
 
-/* 第一行：设置卡片内部拆成左右两栏（左 API 密钥 / 右 选择模型） */
-html.desktop-mode .dl-settings .card-body {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    align-items: start;
-}
-
-/* 两个区块原本上下排列，第二个带 mt-3；进栅格后要清掉上边距 */
-html.desktop-mode .dl-settings .card-body > * {
-    margin-top: 0 !important;
-}
-
-/* 字号设置是第三项，独占一整行，免得右半边留个空格子；
-   顺带让滑块拿到整行宽度，拖起来更顺手 */
-html.desktop-mode .dl-settings .formula-settings {
-    grid-column: 1 / -1;
-}
-
-/* 第二行右侧：LaTeX 代码的 <label> 兼作卡片标题，去掉它原来的下边距 */
+/* 第一行右侧：LaTeX 代码的 <label> 兼作卡片标题，去掉它原来的下边距 */
 html.desktop-mode [data-slot="latex-header"] label {
     margin: 0 !important;
 }
 
-/* 第三行：原来那行"公式预览 + ⛶"整体成为标题行，去掉 mt-2 */
+/* 第二行：原来那行"公式预览 + ⛶"整体成为标题行，去掉 mt-2 */
 html.desktop-mode [data-slot="preview-header"] > * {
     margin-top: 0 !important;
 }
@@ -157,11 +151,11 @@ html.desktop-mode .history-sidebar {
     display: flex;
     flex-direction: column;
     order: 2; /* 在 DOM 里位于正文之前，靠 order 摆到右边 */
-    flex: 0 0 320px;
-    width: 320px;
+    flex: 0 0 348px;
+    width: 348px;
     height: 100vh;
-    background: #f8f9fa;
-    border-left: 1px solid #dee2e6;
+    background: var(--bs-tertiary-bg);
+    border-left: 1px solid var(--bs-border-color);
     overflow: hidden;
     transition: flex-basis 0.18s ease, width 0.18s ease;
 }
@@ -172,12 +166,12 @@ html.desktop-mode .history-sidebar.collapsed {
     width: 44px;
 }
 
-/* 内层固定 320px：折叠时由外层裁切，内容不会跟着重新排版 */
+/* 内层固定 348px：折叠时由外层裁切，内容不会跟着重新排版 */
 html.desktop-mode .history-sidebar-inner {
     display: flex;
     flex-direction: column;
-    width: 320px;
-    min-width: 320px;
+    width: 348px;
+    min-width: 348px;
     height: 100%;
     overflow: hidden;
 }
@@ -188,7 +182,22 @@ html.desktop-mode .sidebar-header {
     gap: 0.5rem;
     flex: 0 0 auto;
     padding: 0.6rem 0.75rem;
-    border-bottom: 1px solid #dee2e6;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+/* 标题行按钮一律不换行：主题 / 设置 / 说明 / 清空四个按钮挤在 348px 里要保持单行。
+   flex-wrap 只是兜底：万一某处字体/缩放撑爆了，宁可换行也不让按钮被裁掉。 */
+html.desktop-mode .sidebar-header {
+    flex-wrap: wrap;
+}
+
+html.desktop-mode .sidebar-header .btn {
+    white-space: nowrap;
+}
+
+/* 主题切换按钮在侧边栏只留图标（"亮色/暗色/自动"文字放标题提示里），省出宽度 */
+html.desktop-mode #themeToggleButton .theme-label {
+    display: none;
 }
 
 /* "清空历史"被 desktop.js 搬到本行，推到行尾与左侧两个按钮分开。
@@ -207,6 +216,8 @@ html.desktop-mode .history-sidebar.collapsed .sidebar-header {
 
 /* 折叠时藏起内容（用 visibility 而非 display，避免布局回流） */
 html.desktop-mode .history-sidebar.collapsed .btn-instructions,
+html.desktop-mode .history-sidebar.collapsed #openSettingsButton,
+html.desktop-mode .history-sidebar.collapsed #themeToggleButton,
 html.desktop-mode .history-sidebar.collapsed #clearHistoryButton,
 html.desktop-mode .history-sidebar.collapsed .sidebar-slot {
     visibility: hidden;
@@ -252,7 +263,7 @@ html.desktop-mode .history-sidebar.clear-btn-moved .sidebar-slot .history-contai
 
 html.desktop-mode .sidebar-slot .history-container .card-text {
     font-size: 0.8rem;
-    color: #6c757d;
+    color: var(--bs-secondary-color);
 }
 
 html.desktop-mode .sidebar-slot .history-list {
@@ -260,10 +271,10 @@ html.desktop-mode .sidebar-slot .history-list {
     min-height: 0;
     max-height: none; /* 由侧边栏高度决定，不用共用的 50vh */
     overflow-y: auto;
-    background: #fff;
+    background: var(--bs-body-bg);
 }
 
-/* 侧边栏只有 320px，而公式宽度没有上限（实测出现过 424px 的）。
+/* 侧边栏只有 348px，而公式宽度没有上限（实测出现过 424px 的）。
    共用的 .history-formula 是 overflow: hidden，超宽公式会被静默裁掉 ——
    在宽版式里少见，塞进窄侧边栏后就成了常态。
    这里改成横向可滚动，保证内容不丢；展开按钮仍只负责解锁高度。 */
@@ -278,7 +289,7 @@ html.desktop-mode .sidebar-slot .history-formula::-webkit-scrollbar {
 }
 
 html.desktop-mode .sidebar-slot .history-formula::-webkit-scrollbar-thumb {
-    background: #ccc;
+    background: var(--bs-secondary-color);
     border-radius: 3px;
 }
 

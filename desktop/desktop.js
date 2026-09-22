@@ -2,12 +2,13 @@
    LaTeX 公式助手 —— 桌面版布局逻辑（Desktop-only）
 
    本文件只由桌面版加载（backend/server.py 注入）。职责仅限于"布局外壳"：
-     1. 把三行布局骨架搬进正文容器，隐藏被搬空的原始行
-     2. 把共用元素按 id 填进骨架的各 slot（设置 / 上传 / LaTeX / 预览）
+     1. 把两行布局骨架搬进正文容器，隐藏被搬空的原始行
+     2. 把共用元素按 id 填进骨架的各 slot（上传 / LaTeX / 预览）
      3. 把共用的历史记录卡片搬进侧边栏
      4. 把"清空历史"按钮并到侧边栏标题行
-     5. 侧边栏折叠 / 展开（含状态记忆）
-     6. 使用说明弹窗（正文从共用页面的说明卡片克隆）
+     5. 把"主题切换"与"⚙ 设置"按钮从页头搬进侧边栏标题行（设置本体是共用弹窗）
+     6. 侧边栏折叠 / 展开（含状态记忆）
+     7. 使用说明弹窗（正文从共用页面的说明卡片克隆）
 
    注意：本文件不定义任何全局函数，也不修改 script.js 的共用逻辑。
    script.js 只做一件事：派发 'app:ready' 事件；桌面版在这里接管外壳。
@@ -30,26 +31,31 @@
 
     // 搬动前先把所有要用的节点找齐：一旦开始搬，closest() 的结果会变
     function collectParts() {
-        var apiKeyInput = document.getElementById('apiKeyInput');
         var imageUpload = document.getElementById('imageUpload');
         var latexInput = document.getElementById('latexInput');
         var openPreview = document.getElementById('openPreviewModal');
         var copyLatex = document.getElementById('copyLaTeXButton');
         var tokenCount = document.getElementById('tokenCountDisplay');
+        var formulaDisplay = document.getElementById('formulaDisplay');
+        var fontSizeSlider = document.getElementById('formulaFontSize');
         var historyList = document.getElementById('historyList');
 
         return {
-            settingsCard: apiKeyInput && apiKeyInput.closest('.card'),
             uploadCard: imageUpload && imageUpload.closest('.card'),
             latexLabel: document.querySelector('label[for="latexInput"]'),
             latexInput: latexInput,
-            // 原来那一行"公式预览 + ⛶ 按钮"整体当卡片标题用
+            // 原来那一行"公式预览 + ⛶ 按钮"整体当卡片标题用（网页版已是 card-header）
             previewHeaderRow: openPreview && openPreview.parentElement,
-            formulaDisplay: document.getElementById('formulaDisplay'),
+            formulaDisplay: formulaDisplay,
             copyRow: copyLatex && copyLatex.closest('.row'),
             tokensRow: tokenCount && tokenCount.closest('.mt-3'),
-            // 这些"原始行"搬空后要藏掉，否则残留外边距占高度
-            mainRow: apiKeyInput && apiKeyInput.closest('.row'),
+            // 字号设置行：预览卡片内部第一行（须在搬动前记录，搬后 closest 失效）
+            fontSizeRow: fontSizeSlider && fontSizeSlider.closest('.font-size-row'),
+            // 这些"原始行"搬空后要藏掉，否则残留外边距占高度。
+            // 设置已挪进共用弹窗，主行以图片上传卡为锚点；
+            // 网页版预览独占第二行，搬空后同样要藏（须在搬动前收集）。
+            mainRow: imageUpload && imageUpload.closest('.row'),
+            previewRow: formulaDisplay && formulaDisplay.closest('.row'),
             historyRow: historyList && historyList.closest('.row')
         };
     }
@@ -61,22 +67,34 @@
 
         parts.mainRow.parentNode.insertBefore(layout, parts.mainRow);
 
-        // 第一行：设置卡片整体搬入，卡片内部由 CSS 分成左右两栏
-        moveInto(slot('settings'), parts.settingsCard);
-
-        // 第二行：左 图片上传 / 右 LaTeX 代码（label 当卡片标题）
+        // 第一行：左 图片上传 / 右 LaTeX 代码（label 当卡片标题）
         moveInto(slot('upload'), parts.uploadCard);
         moveInto(slot('latex-header'), parts.latexLabel);
         moveInto(slot('latex-body'), parts.latexInput);
 
-        // 第三行：公式预览（标题行 / 预览区 / 复制按钮 / Tokens）
-        moveInto(slot('preview-header'), parts.previewHeaderRow);
+        // 第二行：公式预览（标题行 / 预览区 / 复制按钮 / Tokens）。
+        // 网页版的预览标题行本身就是 card-header：整块替换骨架里的空 header，
+        // 直接搬入会造成 card-header 套 card-header 的双层底色；
+        // 万一来源结构变了（不是 card-header），退回普通搬入。
+        var previewHeaderSlot = slot('preview-header');
+        if (previewHeaderSlot && parts.previewHeaderRow) {
+            if (parts.previewHeaderRow.classList.contains('card-header')) {
+                parts.previewHeaderRow.setAttribute('data-slot', 'preview-header');
+                previewHeaderSlot.parentNode.replaceChild(parts.previewHeaderRow, previewHeaderSlot);
+            } else {
+                previewHeaderSlot.appendChild(parts.previewHeaderRow);
+            }
+        }
+        moveInto(slot('preview-body'), parts.fontSizeRow);
         moveInto(slot('preview-body'), parts.formulaDisplay);
         moveInto(slot('preview-body'), parts.copyRow);
         moveInto(slot('preview-body'), parts.tokensRow);
 
-        // 被搬空的原始行不再占位
+        // 被搬空的原始行不再占位；网页版预览独占第二行，搬空后同样要藏
         parts.mainRow.classList.add('dl-source-row');
+        if (parts.previewRow && parts.previewRow !== parts.mainRow) {
+            parts.previewRow.classList.add('dl-source-row');
+        }
         if (parts.historyRow) parts.historyRow.classList.add('dl-source-row');
     }
 
@@ -105,6 +123,25 @@
         // 搬成功后才打标记：desktop.css 只在这个类存在时隐藏卡片的标题行。
         // 万一上面没搬成，标题行会留着，用户不会连"清空历史"入口一起失去。
         sidebar.classList.add('clear-btn-moved');
+    }
+
+    // 把共用的"主题切换"与"⚙ 设置"按钮从页头搬进侧边栏标题行（☰ 与 ？ 之间）。
+    // 打开弹窗的 click 监听由 script.js 绑定，搬节点不丢监听；
+    // 页头本身被 desktop.css 隐藏，按钮搬出来后才重新可见（不会闪）。
+    // 先搬设置、再把主题插到设置前面，最终顺序：☰ 主题 设置 ？。
+    function moveSettingsButtonIntoHeader() {
+        var header = document.querySelector('.history-sidebar .sidebar-header');
+        if (!header) return;
+
+        var settings = document.getElementById('openSettingsButton');
+        if (settings) {
+            header.insertBefore(settings, document.getElementById('openInstructionsButton') || null);
+        }
+
+        var theme = document.getElementById('themeToggleButton');
+        if (theme) {
+            header.insertBefore(theme, settings && settings.parentNode === header ? settings : null);
+        }
     }
 
     function applySidebarState(sidebar, toggleButton, collapsed) {
@@ -155,13 +192,14 @@
     }
 
     // script.js 在 DOMContentLoaded 末尾派发 app:ready，此时共用的
-    // 初始化（历史加载、渲染、模型下拉）已经跑完，可以安全接管外壳。
+    // 初始化（历史加载、渲染、设置弹窗）已经跑完，可以安全接管外壳。
     document.addEventListener('app:ready', function () {
         try {
             var parts = collectParts();
             buildLayout(parts);
             moveHistoryIntoSidebar();
             moveClearButtonIntoHeader();
+            moveSettingsButtonIntoHeader();
             initSidebar();
             initInstructionsModal();
         } finally {
