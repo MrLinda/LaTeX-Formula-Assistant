@@ -135,6 +135,12 @@ html.desktop-mode .dl-settings .card-body > * {
     margin-top: 0 !important;
 }
 
+/* 字号设置是第三项，独占一整行，免得右半边留个空格子；
+   顺带让滑块拿到整行宽度，拖起来更顺手 */
+html.desktop-mode .dl-settings .formula-settings {
+    grid-column: 1 / -1;
+}
+
 /* 第二行右侧：LaTeX 代码的 <label> 兼作卡片标题，去掉它原来的下边距 */
 html.desktop-mode [data-slot="latex-header"] label {
     margin: 0 !important;

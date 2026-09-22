@@ -79,6 +79,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // 初始化公式字号设置（须在 renderLaTeX 之前，保证首帧就按设置渲染）
+    initFormulaFontSizeSettings();
+
     // 初始化Temml渲染
     renderLaTeX();
 
@@ -259,7 +262,8 @@ async function callCustomAPI(base64Data) {
 }
 
 // 应用识别结果到 UI（云端/本地共用）
-function applyRecognitionResult(rawLatex, totalTokens) {
+// stats: { tokens: number } 走云端，{ elapsed: number } 走本地推理
+function applyRecognitionResult(rawLatex, stats) {
     let latexCode = rawLatex || '';
 
     // 使用正则表达式匹配并删除首尾的$$符号及其附近的换行符
@@ -278,8 +282,40 @@ function applyRecognitionResult(rawLatex, totalTokens) {
     document.getElementById('latexInput').value = latexCode;
     renderLaTeX();
 
-    document.getElementById('tokenCountDisplay').textContent =
-        typeof totalTokens === 'number' ? totalTokens : 0;
+    updateUsageDisplay(stats);
+}
+
+// 本地推理不消耗 API Token，改为展示推理耗时
+function updateUsageDisplay(stats) {
+    const label = document.getElementById('usageLabel');
+    const value = document.getElementById('tokenCountDisplay');
+    if (!label || !value) return;
+
+    if (stats && typeof stats.elapsed === 'number') {
+        label.textContent = '推理耗时';
+        value.textContent = stats.elapsed.toFixed(2) + 's';
+    } else {
+        label.textContent = '本次使用Tokens';
+        const tokens = stats && typeof stats.tokens === 'number' ? stats.tokens : 0;
+        value.textContent = tokens;
+    }
+}
+
+// 下载本地模型（首次使用，同步等待后端完成），失败时抛出错误
+async function downloadLocalModel(modelName, sizeBytes) {
+    const mb = sizeBytes ? Math.round(sizeBytes / 1024 / 1024) : null;
+    showLoading(`首次使用该模型，正在下载${mb ? `（约 ${mb}MB）` : ''}，请耐心等待…`);
+
+    const resp = await fetch(`${window.LOCAL_API_BASE}/api/models/download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelName })
+    });
+
+    if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.detail || `状态码 ${resp.status}`);
+    }
 }
 
 // 调用本地 Python 后端识别（桌面版）
@@ -298,20 +334,21 @@ async function callLocalAPI(base64Data, modelName) {
         });
 
         if (resp.status === 409) {
-            hideLoading();
             const data = await resp.json().catch(() => ({}));
-            if (data.error === 'model_not_downloaded') {
-                showAlert(`模型「${modelName}」尚未下载。模型下载器将在后续版本提供。`);
-            } else {
+            if (data.error !== 'model_not_downloaded') {
+                hideLoading();
                 showAlert(data.detail || '模型不可用');
+                return;
             }
-            return;
-        }
-
-        if (resp.status === 501) {
-            hideLoading();
-            showAlert('本地推理功能正在开发中，请暂时使用云端模型。');
-            return;
+            // 首次使用该本地模型：下载完成后重试识别
+            try {
+                await downloadLocalModel(modelName, data.sizeBytes);
+            } catch (err) {
+                hideLoading();
+                showAlert('模型下载失败：' + (err.message || err));
+                return;
+            }
+            return callLocalAPI(base64Data, modelName);
         }
 
         if (!resp.ok) {
@@ -324,8 +361,7 @@ async function callLocalAPI(base64Data, modelName) {
         hideLoading();
 
         if (data && typeof data.latex === 'string') {
-            const tokens = data.usage && data.usage.total_tokens ? data.usage.total_tokens : 0;
-            applyRecognitionResult(data.latex, tokens);
+            applyRecognitionResult(data.latex, { elapsed: data.elapsed });
         } else {
             showAlert('本地推理未返回有效结果。');
         }
@@ -497,10 +533,111 @@ async function callCloudAPI(base64Data) {
 
     if (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
         const totalTokens = data.usage && data.usage.total_tokens ? data.usage.total_tokens : 0;
-        applyRecognitionResult(data.choices[0].message.content, totalTokens);
+        applyRecognitionResult(data.choices[0].message.content, { tokens: totalTokens });
     } else {
         showAlert('识别失败：模型返回了空内容，请尝试其他图片或切换模型。');
     }
+}
+
+// ---- 公式字号 ----
+const FORMULA_FONT_KEY = 'formulaFontSize';
+const FORMULA_AUTOFIT_KEY = 'formulaAutoFit';
+const FORMULA_FONT_DEFAULT = 28;
+const FORMULA_FONT_MIN = 12;
+const FORMULA_FONT_MAX = 96; // 需与 index.html 里滑块的 min/max 保持一致
+
+function getFormulaFontSize() {
+    const saved = parseInt(localStorage.getItem(FORMULA_FONT_KEY), 10);
+    return Number.isFinite(saved) ? saved : FORMULA_FONT_DEFAULT;
+}
+
+function isFormulaAutoFit() {
+    const saved = localStorage.getItem(FORMULA_AUTOFIT_KEY);
+    return saved === null ? true : saved === 'true';
+}
+
+// 按预览区可用空间算字号：宽、高两个方向都要装得下，取更严格的那个。
+// 公式比预览区小时同样会放大，上下限由滑块范围界定。
+function computeFittedFontSize(display, reference) {
+    const math = display.querySelector('math');
+    if (!math) return null;
+
+    const style = getComputedStyle(display);
+    const availWidth = display.clientWidth
+        - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const availHeight = display.clientHeight
+        - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    if (availWidth <= 0 || availHeight <= 0) return null;
+
+    // <math> 的宽度是 100%，量出来永远是预览区宽度，得让它先收缩到内容宽度。
+    // 用 max-content 而不是取内层 <mrow>：像 x^2 这种简单公式 Temml 不会生成
+    // 顶层 <mrow>（直接就是 <msup>），只有 max-content 对两种结构都成立。
+    const previousWidth = math.style.width;
+    math.style.width = 'max-content';
+    const rect = math.getBoundingClientRect();
+    const naturalWidth = rect.width;
+    const naturalHeight = rect.height;
+    math.style.width = previousWidth;
+
+    if (!naturalWidth || !naturalHeight) return null;
+
+    // 调用方已把字号重置为 reference，量到的始终是未缩放尺寸，结果才稳定
+    const ratio = Math.min(availWidth / naturalWidth, availHeight / naturalHeight);
+    const size = Math.floor(reference * ratio);
+    return Math.min(FORMULA_FONT_MAX, Math.max(FORMULA_FONT_MIN, size));
+}
+
+// 自适应开启时滑块禁用，只负责显示当前生效的字号
+function setFontSizeControl(size, autoFit) {
+    const slider = document.getElementById('formulaFontSize');
+    const valueLabel = document.getElementById('formulaFontSizeValue');
+    if (slider) {
+        slider.disabled = autoFit;
+        slider.value = String(size);
+        slider.title = autoFit ? '已开启自动适应，字号由公式大小和预览区共同决定' : '';
+    }
+    if (valueLabel) valueLabel.textContent = size + 'px';
+}
+
+function applyFormulaFontSize() {
+    const display = document.getElementById('formulaDisplay');
+    if (!display) return;
+
+    const preferred = getFormulaFontSize();
+    const autoFit = isFormulaAutoFit();
+
+    // 先按基准字号渲染，自适应才有东西可测量
+    display.style.fontSize = preferred + 'px';
+
+    const size = autoFit
+        ? (computeFittedFontSize(display, preferred) || preferred)
+        : preferred;
+
+    display.style.fontSize = size + 'px';
+    setFontSizeControl(size, autoFit);
+}
+
+function initFormulaFontSizeSettings() {
+    const slider = document.getElementById('formulaFontSize');
+    const autoFit = document.getElementById('formulaAutoFit');
+    if (!slider || !autoFit) return;
+
+    slider.value = String(getFormulaFontSize());
+    autoFit.checked = isFormulaAutoFit();
+
+    slider.addEventListener('input', function() {
+        localStorage.setItem(FORMULA_FONT_KEY, this.value);
+        applyFormulaFontSize();
+    });
+
+    autoFit.addEventListener('change', function() {
+        localStorage.setItem(FORMULA_AUTOFIT_KEY, this.checked ? 'true' : 'false');
+        // 关闭自适应时 applyFormulaFontSize 会把滑块还原成用户设定的字号
+        applyFormulaFontSize();
+    });
+
+    // 预览区尺寸随窗口变化，自适应要跟着重算
+    window.addEventListener('resize', applyFormulaFontSize);
 }
 
 // 渲染LaTeX
@@ -524,6 +661,9 @@ function renderLaTeX() {
     } catch (error) {
         formulaDisplay.innerHTML = `<div class="text-danger">渲染错误: ${error.message}</div>`;
     }
+
+    // 渲染完再调字号：自适应需要先有内容才能测量
+    applyFormulaFontSize();
 }
 
 // 复制LaTeX
@@ -607,8 +747,13 @@ function showToast(message) {
 }
 
 // 显示加载动画
-function showLoading() {
+function showLoading(message) {
     isLoading = true;
+    const messageEl = document.getElementById('loadingMessage');
+    if (messageEl) {
+        messageEl.textContent = message || '';
+        messageEl.style.display = message ? 'block' : 'none';
+    }
     document.getElementById('loadingOverlay').style.display = 'flex';
 }
 

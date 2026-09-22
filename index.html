@@ -56,6 +56,17 @@
                             </select>
                             <input type="text" id="customModelInput" class="form-control mt-2" placeholder="请输入模型代号，如 Qwen/Qwen3-VL-8B-Instruct" style="display: none;">
                         </div>
+                        <div class="mt-3 formula-settings">
+                            <label for="formulaFontSize" class="form-label">公式字号</label>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <input type="range" id="formulaFontSize" class="form-range formula-font-size-range" min="12" max="96" step="1" value="28">
+                                <span id="formulaFontSizeValue" class="text-muted small formula-font-size-value">28px</span>
+                                <div class="form-check mb-0 ms-2">
+                                    <input class="form-check-input" type="checkbox" id="formulaAutoFit" checked>
+                                    <label class="form-check-label text-nowrap" for="formulaAutoFit">自动适应预览区大小</label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -95,7 +106,7 @@
                             </div>
                         </div>
                         <div class="mt-3">
-                            <p class="mb-0">本次使用Tokens：<span id="tokenCountDisplay">0</span></p>
+                            <p class="mb-0"><span id="usageLabel">本次使用Tokens</span>：<span id="tokenCountDisplay">0</span></p>
                         </div>
                     </div>
                 </div>
@@ -156,6 +167,7 @@
     <div class="spinner-border text-primary" role="status">
         <span class="visually-hidden">Loading...</span>
     </div>
+    <p id="loadingMessage" class="loading-message" style="display: none;"></p>
 </div>
 
 <div class="toast-container position-absolute top-0 end-0 p-3">

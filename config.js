@@ -3,24 +3,10 @@
 // provider: "local"  -> 走本地 Python 后端（PyWebView 桌面版），无需 API 密钥
 const modelConfig = {
     // === 本地模型（桌面版，按需下载）===
-    "pp-formulanet-s": {
-        name: "pp-formulanet-s",
-        displayName: "PP-FormulaNet-S（本地·英文·224MB）",
-        provider: "local"
-    },
-    "pp-formulanet-plus-m": {
-        name: "pp-formulanet-plus-m",
-        displayName: "PP-FormulaNet_plus-M（本地·中文·592MB）",
-        provider: "local"
-    },
-    "unimernet-tiny": {
-        name: "unimernet-tiny",
-        displayName: "UniMERNet-tiny（本地·~250MB）",
-        provider: "local"
-    },
-    "latex-ocr-rec": {
-        name: "latex-ocr-rec",
-        displayName: "LaTeX_OCR_rec（本地·英文·99MB）",
+    // name 必须与 backend/inference 里注册的模型 key 一致
+    "rapid-latex-ocr": {
+        name: "rapid-latex-ocr",
+        displayName: "RapidLaTeXOCR（本地·CPU·171MB）",
         provider: "local"
     },
     // === 云端模型（SiliconFlow）===

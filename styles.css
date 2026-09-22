@@ -13,6 +13,26 @@
     overflow: auto;
     -webkit-overflow-scrolling: touch;
     counter-reset: tmlEqnNo;
+    /* 公式垂直居中。这里用 flex + margin:auto 而不是 align-items:center：
+       靠 align-items 居中的话，公式高于容器时顶部会被裁掉且滚不上去，
+       auto 外边距在空间不足时会退化成 0，滚动方向保持正常。 */
+    display: flex;
+}
+
+.formula-display > * {
+    margin: auto;
+}
+
+.formula-font-size-value {
+    flex: 0 0 3.2rem;
+    text-align: right;
+}
+
+/* Bootstrap 的 .form-range 是 width:100%，在 flex 行里会把其余控件挤出去 */
+.formula-font-size-range {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 8rem;
 }
 
 .image-preview {
@@ -28,10 +48,18 @@
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.5);
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     z-index: 9999;
     display: none; /* 默认隐藏 */
+}
+
+.loading-message {
+    margin: 1rem 0 0;
+    max-width: 24rem;
+    color: #fff;
+    text-align: center;
 }
 
 .spinner-border {

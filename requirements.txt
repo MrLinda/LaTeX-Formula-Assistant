@@ -4,7 +4,24 @@ pywebview==6.2.1
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 onnxruntime>=1.19
-numpy>=1.26,<3.0
 Pillow>=10.0
 tokenizers>=0.20
 ftfy>=6.2
+
+# 本地公式识别：RapidLaTeXOCR（LaTeX-OCR 的 ONNX 版，纯 CPU）
+rapid_latex_ocr==0.0.9
+
+# numpy 必须锁在 1.x：rapid_latex_ocr/main.py 里的
+# `int(np.argmax(arr, axis=-1))` 在 numpy 2 下会抛
+# TypeError: only 0-dimensional arrays can be converted to Python scalars
+# 上游 requirements 同样锁 <2.0.0。
+numpy>=1.26,<2.0
+
+# 以下是 rapid_latex_ocr 导入期就需要、但上游 requirements.txt 漏声明的依赖
+requests>=2.31   # utils.py: import requests
+tqdm>=4.66       # utils.py: import tqdm
+PyYAML>=6.0      # main.py: 读取 config.yaml
+chardet>=5.0     # utils.py: 检测 config.yaml 编码
+# opencv-python 5.x 的元数据要求 numpy>=2，与上面的 numpy<2 冲突，
+# 因此显式锁在 4.x，保证解析结果稳定。
+opencv-python>=4.8,<5.0  # utils.py / utils_load.py: import cv2

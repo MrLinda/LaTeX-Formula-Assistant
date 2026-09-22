@@ -1,17 +1,20 @@
 """FastAPI 应用：服务前端静态资源，并暴露本地推理/模型管理 API。
 
-Phase 1 仅实现前端静态资源服务和最小骨架路由；推理和模型管理留在后续 Phase。
+识别走 backend.inference，模型文件按需下载到用户数据目录。
 """
 
 from __future__ import annotations
 
+import base64
 import re
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from pydantic import BaseModel
 
+from backend import inference
 from backend.config import (
     APP_TITLE,
     FRONTEND_DIRS,
@@ -150,7 +153,21 @@ for _dir in FRONTEND_DIRS:
     _register_dir(_dir)
 
 
-# ---------- 骨架 API（Phase 2/3 才有实际实现） ----------
+# ---------- 本地推理 / 模型管理 ----------
+
+class RecognizeRequest(BaseModel):
+    model: str
+    image_base64: str
+
+
+class ModelRequest(BaseModel):
+    model: str
+
+
+def _require_known_model(name: str) -> None:
+    if not inference.is_known(name):
+        raise HTTPException(status_code=404, detail=f"未知的本地模型：{name}")
+
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
@@ -159,11 +176,55 @@ async def health() -> dict[str, Any]:
 
 @app.get("/api/models")
 async def list_models() -> JSONResponse:
-    """列出本地模型和下载状态。Phase 1 阶段返回空清单。"""
-    return JSONResponse({"models": []})
+    """列出本地模型及其下载状态。"""
+    return JSONResponse({"models": inference.list_models()})
 
 
 @app.post("/api/recognize")
-async def recognize() -> Response:
-    """本地公式识别入口。Phase 1 阶段返回 501。"""
-    raise HTTPException(status_code=501, detail="local inference not implemented yet")
+def recognize(payload: RecognizeRequest) -> JSONResponse:
+    """本地公式识别。
+
+    模型文件缺失时返回 409 + error=model_not_downloaded，由前端触发下载。
+    同步函数：FastAPI 会放到线程池执行，不阻塞事件循环。
+    """
+    _require_known_model(payload.model)
+
+    if not inference.is_downloaded(payload.model):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "model_not_downloaded",
+                "detail": f"模型「{payload.model}」尚未下载。",
+                "sizeBytes": inference.model_size(payload.model),
+            },
+        )
+
+    try:
+        image = base64.b64decode(payload.image_base64)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="图片 base64 解码失败")
+
+    try:
+        latex, elapsed = inference.recognize(payload.model, image)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"本地识别失败：{exc}")
+
+    return JSONResponse(
+        {
+            "latex": latex,
+            "elapsed": round(elapsed, 3),
+            # 本地推理不消耗云端 token，但保持与云端一致的响应结构
+            "usage": {"total_tokens": 0},
+        }
+    )
+
+
+@app.post("/api/models/download")
+def download_model(payload: ModelRequest) -> JSONResponse:
+    """下载模型文件。同步执行，首次约 171MB。"""
+    _require_known_model(payload.model)
+    try:
+        inference.download(payload.model)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"模型下载失败：{exc}")
+    return JSONResponse({"ok": True, "model": payload.model})
