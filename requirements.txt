@@ -24,4 +24,7 @@ PyYAML>=6.0      # main.py: 读取 config.yaml
 chardet>=5.0     # utils.py: 检测 config.yaml 编码
 # opencv-python 5.x 的元数据要求 numpy>=2，与上面的 numpy<2 冲突，
 # 因此显式锁在 4.x，保证解析结果稳定。
+# 看起来换 headless 版能省 20–30MB，但 rapid_latex_ocr 在自己元数据里硬声明了
+# opencv-python，pip 每次都会把它装回来；而两个包都往同一个 cv2/ 目录写文件，
+# 共存即互相覆盖。为一个上游硬依赖打架不划算，直接用 opencv-python。
 opencv-python>=4.8,<5.0  # utils.py / utils_load.py: import cv2

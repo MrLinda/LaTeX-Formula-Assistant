@@ -10,7 +10,8 @@ venv/
 *.egg-info/
 
 # PyInstaller / 打包产物
-build/output/
+# PyInstaller 的工作目录是 build/<spec 名>/，所以直接忽略整个 build/
+build/
 dist/
 *.spec.bak
 
