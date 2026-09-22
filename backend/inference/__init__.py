@@ -15,7 +15,7 @@ import hashlib
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -90,6 +90,35 @@ _engine_lock = threading.Lock()
 _infer_lock = threading.Lock()
 _engines: dict[str, Any] = {}
 
+# 下载进度：下载跑在线程池线程里，由前端轮询读取，因此读写都要加锁。
+_progress_lock = threading.Lock()
+_progress: dict[str, Any] = {
+    "active": False,
+    "model": "",
+    "file": "",
+    "downloaded": 0,
+    "total": 0,
+}
+
+
+def get_progress() -> dict[str, Any]:
+    """当前下载进度快照，附带算好的百分比。"""
+    with _progress_lock:
+        snapshot = dict(_progress)
+
+    total = snapshot["total"]
+    # 用 floor 而非 round：round 会把 99.99% 进位成 100%，
+    # 让人以为已经下完。这样 100% 严格等于「字节数齐了」。
+    snapshot["percent"] = (
+        min(100, snapshot["downloaded"] * 100 // total) if total else 0
+    )
+    return snapshot
+
+
+def _update_progress(**fields: Any) -> None:
+    with _progress_lock:
+        _progress.update(fields)
+
 
 def is_known(key: str) -> bool:
     """是否是已登记的本地模型。"""
@@ -121,10 +150,16 @@ def is_downloaded(key: str) -> bool:
     return all(_size_matches(target / f.name, f) for f in model.files)
 
 
-def _download_file(url: str, dest: Path, spec: ModelFile) -> None:
+def _download_file(
+    url: str,
+    dest: Path,
+    spec: ModelFile,
+    on_bytes: Callable[[int], None] | None = None,
+) -> None:
     """下载单个文件，边写边算 SHA256，校验通过后才落到最终文件名。"""
     tmp = dest.with_name(dest.name + ".part")
     digest = hashlib.sha256()
+    written = 0
     try:
         with requests.get(
             url, stream=True, timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT)
@@ -135,6 +170,9 @@ def _download_file(url: str, dest: Path, spec: ModelFile) -> None:
                     if chunk:
                         fp.write(chunk)
                         digest.update(chunk)
+                        written += len(chunk)
+                        if on_bytes is not None:
+                            on_bytes(written)
 
         if tmp.stat().st_size != spec.size or digest.hexdigest() != spec.sha256:
             raise ValueError(f"{spec.name} 校验失败（大小或 SHA256 不匹配）")
@@ -150,15 +188,27 @@ def _ordered_sources() -> tuple[str, ...]:
     return _SOURCE_PREFIXES[first:] + _SOURCE_PREFIXES[:first]
 
 
-def _fetch(spec: ModelFile, dest: Path) -> None:
-    """按顺序尝试各下载源，全部失败时汇总原因。"""
+def _fetch(spec: ModelFile, dest: Path, done_bytes: int) -> None:
+    """按顺序尝试各下载源，全部失败时汇总原因。
+
+    done_bytes 是本文件之前已完成的字节数，用来把单文件进度换算成整体进度。
+    """
     global _preferred_source
 
     failures = []
     for prefix in _ordered_sources():
         url = f"{prefix}{_RELEASE_BASE}/{spec.name}"
         try:
-            _download_file(url, dest, spec)
+            _download_file(
+                url,
+                dest,
+                spec,
+                # 一个源中途失败会回退到下一个源，重新从 0 开始写，
+                # 所以这里按「已完成 + 本次已写」上报，不能累加。
+                on_bytes=lambda written: _update_progress(
+                    downloaded=done_bytes + written
+                ),
+            )
         except Exception as exc:
             failures.append(f"  {url}\n    -> {exc}")
             continue
@@ -177,11 +227,21 @@ def download(key: str) -> None:
 
     target = model_dir(key)
     target.mkdir(parents=True, exist_ok=True)
-    for spec in model.files:
-        dest = target / spec.name
-        if _size_matches(dest, spec):
-            continue
-        _fetch(spec, dest)
+
+    # 只统计真正要下的文件，进度条才会从 0 走到 100%
+    pending = [f for f in model.files if not _size_matches(target / f.name, f)]
+    total = sum(f.size for f in pending)
+
+    done = 0
+    _update_progress(active=True, model=key, file="", downloaded=0, total=total)
+    try:
+        for spec in pending:
+            _update_progress(file=spec.name, downloaded=done)
+            _fetch(spec, target / spec.name, done)
+            done += spec.size
+            _update_progress(downloaded=done)
+    finally:
+        _update_progress(active=False, file="", downloaded=done, total=total)
 
 
 def _create_engine(key: str) -> Any:

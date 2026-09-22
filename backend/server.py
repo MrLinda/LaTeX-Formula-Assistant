@@ -221,10 +221,16 @@ def recognize(payload: RecognizeRequest) -> JSONResponse:
 
 @app.post("/api/models/download")
 def download_model(payload: ModelRequest) -> JSONResponse:
-    """下载模型文件。同步执行，首次约 171MB。"""
+    """下载模型文件。同步执行，首次约 171MB，进度由前端轮询查询。"""
     _require_known_model(payload.model)
     try:
         inference.download(payload.model)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"模型下载失败：{exc}")
     return JSONResponse({"ok": True, "model": payload.model})
+
+
+@app.get("/api/models/download/progress")
+async def download_progress() -> JSONResponse:
+    """当前下载进度：active / percent / downloaded / total / file。"""
+    return JSONResponse(inference.get_progress())

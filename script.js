@@ -301,20 +301,55 @@ function updateUsageDisplay(stats) {
     }
 }
 
+// 轮询后端下载进度并刷新遮罩文案；返回停止函数
+function pollDownloadProgress(modelName, sizeBytes) {
+    const mb = sizeBytes ? Math.round(sizeBytes / 1024 / 1024) : null;
+    const prefix = `首次使用该模型，正在下载${mb ? `（约 ${mb}MB）` : ''}`;
+
+    const tick = async function() {
+        try {
+            const resp = await fetch(`${window.LOCAL_API_BASE}/api/models/download/progress`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (!data.active || !data.total) return;
+            // 开头要探测下载源（直连失败才回退到镜像），这段时间是 0 字节，
+            // 直接显示 0% 会像卡住，所以单独提示
+            if (!data.downloaded) {
+                showLoading(`${prefix} 正在连接下载源…`);
+                return;
+            }
+            const done = (data.downloaded / 1024 / 1024).toFixed(1);
+            const total = (data.total / 1024 / 1024).toFixed(1);
+            showLoading(`${prefix} ${data.percent}%（${done}/${total} MB）`);
+        } catch (_) {
+            // 轮询失败不影响下载本身，静默忽略
+        }
+    };
+
+    tick();
+    const timer = setInterval(tick, 300);
+    return function() { clearInterval(timer); };
+}
+
 // 下载本地模型（首次使用，同步等待后端完成），失败时抛出错误
 async function downloadLocalModel(modelName, sizeBytes) {
     const mb = sizeBytes ? Math.round(sizeBytes / 1024 / 1024) : null;
     showLoading(`首次使用该模型，正在下载${mb ? `（约 ${mb}MB）` : ''}，请耐心等待…`);
 
-    const resp = await fetch(`${window.LOCAL_API_BASE}/api/models/download`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelName })
-    });
+    const stopPolling = pollDownloadProgress(modelName, sizeBytes);
+    try {
+        const resp = await fetch(`${window.LOCAL_API_BASE}/api/models/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelName })
+        });
 
-    if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data.detail || `状态码 ${resp.status}`);
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || `状态码 ${resp.status}`);
+        }
+    } finally {
+        stopPolling();
     }
 }
 
