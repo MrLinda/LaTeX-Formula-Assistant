@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from backend.config import (
     FRONTEND_DIRS,
     FRONTEND_FILES,
     desktop_assets_dir,
+    models_dir,
     web_root,
 )
 
@@ -177,7 +179,13 @@ async def health() -> dict[str, Any]:
 @app.get("/api/models")
 async def list_models() -> JSONResponse:
     """列出本地模型及其下载状态。"""
-    return JSONResponse({"models": inference.list_models()})
+    return JSONResponse(
+        {
+            "models": inference.list_models(),
+            "directory": str(models_dir()),
+            "totalBytes": inference.total_models_disk_usage(),
+        }
+    )
 
 
 @app.post("/api/recognize")
@@ -206,6 +214,15 @@ def recognize(payload: RecognizeRequest) -> JSONResponse:
 
     try:
         latex, elapsed = inference.recognize(payload.model, image)
+    except FileNotFoundError:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "model_not_downloaded",
+                "detail": f"模型「{payload.model}」尚未下载。",
+                "sizeBytes": inference.model_size(payload.model),
+            },
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"本地识别失败：{exc}")
 
@@ -228,6 +245,30 @@ def download_model(payload: ModelRequest) -> JSONResponse:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"模型下载失败：{exc}")
     return JSONResponse({"ok": True, "model": payload.model})
+
+
+@app.delete("/api/models/{model_name}")
+def delete_model(model_name: str) -> JSONResponse:
+    """删除本地模型文件；正在下载或推理时由推理层安全串行。"""
+    _require_known_model(model_name)
+    try:
+        freed = inference.delete_model(model_name)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"模型删除失败：{exc}")
+    return JSONResponse({"ok": True, "model": model_name, "freedBytes": freed})
+
+
+@app.post("/api/models/open-directory")
+def open_models_directory() -> JSONResponse:
+    """在 Windows 文件资源管理器中打开 models/ 目录。"""
+    path = models_dir()
+    try:
+        os.startfile(path)  # type: ignore[attr-defined]
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"无法打开模型目录：{exc}")
+    return JSONResponse({"ok": True, "directory": str(path)})
 
 
 @app.get("/api/models/download/progress")

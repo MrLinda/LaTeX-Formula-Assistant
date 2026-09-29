@@ -66,3 +66,34 @@
         </div>
     </div>
 </div>
+
+<!-- 本地模型管理弹窗。数据与操作均由 desktop.js 通过本地后端接口完成。 -->
+<div class="modal fade" id="modelManagerModal" tabindex="-1"
+     aria-labelledby="modelManagerModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="modelManagerModalLabel">本地模型管理</h5>
+                    <div class="small text-body-secondary mt-1" id="modelManagerSummary">正在读取模型状态…</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                        data-model-manager-close aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <label for="modelManagerPath" class="form-label">模型保存位置</label>
+                <div class="input-group mb-3">
+                    <input id="modelManagerPath" class="form-control model-manager-path" type="text" readonly>
+                    <button id="openModelsDirectoryButton" class="btn btn-outline-secondary" type="button">打开目录</button>
+                </div>
+
+                <div id="modelManagerStatus" class="alert py-2 mb-3" role="status" hidden></div>
+                <div id="modelManagerList" class="model-manager-list" aria-live="polite"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="refreshModelManagerButton" type="button" class="btn btn-outline-secondary">刷新</button>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal" data-model-manager-close>完成</button>
+            </div>
+        </div>
+    </div>
+</div>

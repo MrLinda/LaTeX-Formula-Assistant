@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -59,24 +58,20 @@ def desktop_assets_dir() -> Path:
     return repo_root() / "desktop"
 
 
-def user_data_dir() -> Path:
-    """用户数据目录（模型存放位置等）。
+def app_dir() -> Path:
+    """可写的应用目录，用作便携版数据目录。
 
-    Windows: %APPDATA%\\LaTeX-Formula-Assistant
-    其他系统: ~/.local/share/LaTeX-Formula-Assistant
+    - 打包运行时：exe 所在目录，而不是 PyInstaller 的 ``_internal`` 资源目录。
+    - 开发运行时：仓库根目录，避免把模型下载到 Python/虚拟环境目录。
     """
-    if sys.platform == "win32":
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / APP_NAME
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / APP_NAME
-    xdg = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(xdg) / APP_NAME
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return repo_root()
 
 
 def models_dir() -> Path:
-    """本地模型存放目录，首次访问时自动创建。"""
-    d = user_data_dir() / "models"
+    """本地模型存放目录（应用目录下的 models/），首次访问时自动创建。"""
+    d = app_dir() / "models"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

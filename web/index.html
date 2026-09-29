@@ -262,7 +262,12 @@
                     <select id="localModelSelect" class="form-select">
                         <!-- 选项将通过JavaScript动态生成 -->
                     </select>
-                    <div class="form-text">本地推理无需 API 密钥、不联网；模型仅在首次使用时自动下载。</div>
+                    <div class="d-flex align-items-center justify-content-between gap-3 mt-2">
+                        <div class="form-text mt-0">本地推理无需 API 密钥、不联网；模型仅在首次使用时自动下载。</div>
+                        <button id="openModelManagerButton" class="btn btn-sm btn-outline-secondary flex-shrink-0" type="button">
+                            管理本地模型…
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 公式字号设置已挪到正文"公式预览"卡片内部第一行，

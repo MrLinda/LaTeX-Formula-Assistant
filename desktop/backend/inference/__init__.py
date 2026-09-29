@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,6 +89,7 @@ MODELS: dict[str, LocalModel] = {
 
 _engine_lock = threading.Lock()
 _infer_lock = threading.Lock()
+_model_files_lock = threading.Lock()
 _engines: dict[str, Any] = {}
 
 # 下载进度：下载跑在线程池线程里，由前端轮询读取，因此读写都要加锁。
@@ -220,6 +222,12 @@ def _fetch(spec: ModelFile, dest: Path, done_bytes: int) -> None:
 
 
 def download(key: str) -> None:
+    """串行下载模型，避免管理窗口与首次识别同时改写模型文件。"""
+    with _model_files_lock:
+        _download(key)
+
+
+def _download(key: str) -> None:
     """下载模型缺失的文件；已存在且大小正确的文件跳过。"""
     model = MODELS.get(key)
     if model is None:
@@ -270,10 +278,68 @@ def recognize(key: str, image: bytes) -> tuple[str, float]:
     """识别单张公式图片，返回 (LaTeX, 耗时秒)。"""
     if key not in MODELS:
         raise KeyError(key)
-    engine = _get_engine(key)
-    # ONNX 会话本身可并发，但 CPU 推理串行更可预测，避免多个请求互相抢核。
-    with _infer_lock:
-        return engine(image)
+    # 文件锁让删除操作不会插进「状态检查 → 建立会话 → 推理」之间。
+    with _model_files_lock:
+        if not is_downloaded(key):
+            raise FileNotFoundError(f"模型「{key}」尚未下载")
+        # ONNX 会话本身可并发，但 CPU 推理串行更可预测，避免多个请求互相抢核。
+        with _infer_lock:
+            # 在推理锁内取引擎，使删除模型时不会留下刚创建但已从缓存移除的会话。
+            engine = _get_engine(key)
+            return engine(image)
+
+
+def model_disk_usage(key: str) -> int:
+    """模型目录当前实际占用字节数，包含残留或不完整文件。"""
+    target = model_dir(key)
+    if not target.is_dir():
+        return 0
+
+    total = 0
+    for path in target.rglob("*"):
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            # 某个文件恰好被外部删除时忽略，刷新即可得到最新状态。
+            continue
+    return total
+
+
+def total_models_disk_usage() -> int:
+    """models/ 目录当前实际占用字节数。"""
+    root = models_dir()
+    total = 0
+    for path in root.rglob("*"):
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def delete_model(key: str) -> int:
+    """删除一个已登记模型的目录，返回释放的字节数。"""
+    if key not in MODELS:
+        raise KeyError(key)
+
+    if not _model_files_lock.acquire(blocking=False):
+        raise RuntimeError("模型文件正在下载，请稍后再试")
+
+    try:
+        # 等待正在进行的推理结束，再释放缓存会话并删除文件。
+        with _infer_lock:
+            with _engine_lock:
+                _engines.pop(key, None)
+
+            target = model_dir(key)
+            freed = model_disk_usage(key)
+            if target.exists():
+                shutil.rmtree(target)
+            return freed
+    finally:
+        _model_files_lock.release()
 
 
 def list_models() -> list[dict[str, Any]]:
@@ -284,6 +350,7 @@ def list_models() -> list[dict[str, Any]]:
             "displayName": model.display_name,
             "downloaded": is_downloaded(model.key),
             "sizeBytes": model.total_size,
+            "installedBytes": model_disk_usage(model.key),
         }
         for model in MODELS.values()
     ]

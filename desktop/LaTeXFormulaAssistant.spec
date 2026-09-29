@@ -9,7 +9,7 @@ r"""PyInstaller 打包配置（onedir 绿色版）。
 几个关键决策：
 - onedir 而非 onefile：onefile 每次启动都要把约 200MB 解压到临时目录，
   桌面应用启动会慢好几秒，得不偿失。
-- 模型不打进包：模型按需下载到用户数据目录，包体积因此与模型解耦。
+- 模型不打进包：模型按需下载到 exe 同级的 models/，包体积因此与模型解耦。
 - 前端资源清单从 backend.config 派生：以后新增前端文件只要按既有约定登记，
   就不会出现「后端能路由、打包却漏了文件」的静默降级。
 - 打包布局与仓库布局一致（<根>/web/ 与 <根>/desktop/），
@@ -27,6 +27,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 ROOT = Path(SPECPATH).resolve()
 REPO_ROOT = ROOT.parent
 WEB_ROOT = REPO_ROOT / "web"
+ICON_PATH = ROOT / "assets" / "app-icon.ico"
 sys.path.insert(0, str(ROOT))
 
 from backend.config import APP_NAME, FRONTEND_DIRS, FRONTEND_FILES  # noqa: E402
@@ -118,8 +119,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # 仓库里暂无图标文件；有 .ico 后填 path 即可
-    icon=None,
+    icon=str(ICON_PATH),
 )
 
 coll = COLLECT(

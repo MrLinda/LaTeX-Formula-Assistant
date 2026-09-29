@@ -30,6 +30,7 @@ html.desktop-mode body > .container {
     overflow-y: auto;
     overflow-x: hidden;
     margin-top: 0.75rem !important;
+    margin-bottom: 0.75rem !important;
 }
 
 /* 窗口自带标题栏，页头与页脚也去掉。
@@ -143,6 +144,43 @@ html.desktop-mode [data-slot="latex-header"] label {
 /* 第二行：原来那行"公式预览 + ⛶"整体成为标题行，去掉 mt-2 */
 html.desktop-mode [data-slot="preview-header"] > * {
     margin-top: 0 !important;
+}
+
+/* ---- 本地模型管理弹窗 ---- */
+
+html.desktop-mode .model-manager-path {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.82rem;
+}
+
+html.desktop-mode .model-manager-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+html.desktop-mode .model-manager-item {
+    padding: 1rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    background: var(--bs-tertiary-bg);
+}
+
+html.desktop-mode .model-manager-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+html.desktop-mode .model-manager-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+html.desktop-mode .model-download-progress .progress {
+    height: 0.65rem;
 }
 
 /* ---- 历史记录侧边栏（位于窗口右侧） ---- */

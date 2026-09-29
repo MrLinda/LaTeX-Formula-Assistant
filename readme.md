@@ -70,10 +70,15 @@ python desktop/main.py
 | 模型 | RapidLaTeXOCR（LaTeX-OCR 的 ONNX 版） |
 | 推理 | onnxruntime CPU，无需显卡 |
 | 体积 | 约 171MB，**首次使用时自动下载**，不打进安装包 |
-| 位置 | `%APPDATA%\LaTeX-Formula-Assistant\models\rapid-latex-ocr\` |
+| 位置 | 桌面版为 `<EXE所在目录>\models\rapid-latex-ocr\`；源码运行时为 `<仓库根目录>\models\rapid-latex-ocr\` |
 | 速度 | 单张公式约 1–2 秒 |
 
 下载过程会显示百分比进度。模型文件按 SHA256 校验；直连 GitHub 不可用时会自动回退到镜像源。
+桌面版可在“设置 → 本地模型 → 管理本地模型”中查看安装状态和磁盘占用，并执行下载、重新下载、删除或打开模型目录。
+
+> 从旧版本升级时，原模型仍保留在 `%APPDATA%\LaTeX-Formula-Assistant\models\`，
+> 不会被自动删除或移动。可将其中的模型文件夹复制到新版 EXE 同级的 `models\`，避免重复下载。
+> 请将桌面版解压到当前用户可写的目录；若放在 `Program Files` 等受保护目录，模型下载可能因无写入权限而失败。
 
 ### 构建（Windows）
 
@@ -86,12 +91,28 @@ python desktop/main.py
 - `LaTeX-Formula-Assistant\` —— onedir 绿色版，双击里面的 exe 即可运行
 - `LaTeX-Formula-Assistant.zip` —— 可直接分发的压缩包
 
+### 构建安装包（Windows）
+
+安装 [Inno Setup 7](https://jrsoftware.org/isdl.php) 后运行：
+
+```powershell
+.\desktop\build-installer.ps1
+```
+
+脚本会先构建绿色版，再生成单文件安装程序：
+
+`desktop\dist\installer\LaTeX-Formula-Assistant-Setup-<版本号>.exe`
+
+安装器采用仅当前用户安装，默认目录为 `%LOCALAPPDATA%\Programs\LaTeX-Formula-Assistant\`，
+无需管理员权限，也能让本地模型正常下载到 EXE 同级的 `models\`。如绿色版已经构建完成，
+可用 `.\desktop\build-installer.ps1 -SkipAppBuild` 仅重新生成安装包。
+
 构建前需安装 PyInstaller：`uv pip install --python ".venv\Scripts\python.exe" pyinstaller`
 
 几点说明：
 
 - 采用 **onedir 而非 onefile**：onefile 每次启动都要把约 220MB 解压到临时目录，启动会慢好几秒。
-- 目前**没有配置图标**，用的是 PyInstaller 默认图标。
+- EXE 图标使用 `desktop/assets/app-icon.ico`；高分辨率 PNG 源图保存在同目录的 `app-icon.png`。
 - 排查打包期问题时，用 `$env:LFA_DEBUG_CONSOLE = "1"; .\desktop\build.ps1` 保留控制台窗口，可看到启动报错。
 
 ## 模型配置说明
