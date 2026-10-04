@@ -46,6 +46,14 @@
 </head>
 <body>
 <!-- DESKTOP_BODY -->
+<!-- 服务端公告（未配置服务端或无公告时不显示） -->
+<div id="announcementBar" class="container mt-3" style="display: none;">
+    <div class="alert alert-info alert-dismissible fade show mb-0" role="alert">
+        <strong id="announcementTitle"></strong>
+        <span id="announcementContent"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
+    </div>
+</div>
 <div class="container mt-4">
     <!-- 页头：标题居中，主题/设置按钮绝对定位在右侧（桌面版会把按钮搬进侧边栏） -->
     <div class="page-header">
@@ -91,7 +99,14 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <label for="formulaDisplay" class="mb-0">公式预览</label>
-                    <button id="openPreviewModal" class="btn btn-sm" title="全屏预览公式" style="padding: 0.15rem 0.4rem; border: 1px solid var(--bs-border-color); color: var(--bs-secondary-color);">⛶</button>
+                    <div class="d-flex align-items-center gap-2">
+                        <!-- 识别结果反馈：仅服务端识别且本轮有 recognition_id 时露出 -->
+                        <div id="feedbackButtons" class="btn-group btn-group-sm" role="group" aria-label="识别结果反馈" style="display: none;">
+                            <button id="feedbackGoodButton" class="btn btn-outline-success" type="button" title="识别正确">👍</button>
+                            <button id="feedbackBadButton" class="btn btn-outline-danger" type="button" title="识别有问题">👎</button>
+                        </div>
+                        <button id="openPreviewModal" class="btn btn-sm" title="全屏预览公式" style="padding: 0.15rem 0.4rem; border: 1px solid var(--bs-border-color); color: var(--bs-secondary-color);">⛶</button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <!-- 字号设置：预览卡片内部第一行（桌面版由 desktop.js 搬进骨架预览区首行） -->
@@ -219,14 +234,16 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
-                <!-- 识别方式：仅桌面版显示（纯 web 恒为云端） -->
-                <div id="recognizeModeGroup" class="mb-3" style="display: none;">
+                <!-- 识别方式：本地模型仅桌面版露出；服务端需要登录 -->
+                <div id="recognizeModeGroup" class="mb-3">
                     <label class="form-label d-block mb-1">识别方式</label>
                     <div class="btn-group" role="group" aria-label="识别方式">
                         <input type="radio" class="btn-check" name="recognizeMode" id="modeLocal" value="local">
-                        <label class="btn btn-outline-primary" for="modeLocal">本地模型</label>
+                        <label class="btn btn-outline-primary" for="modeLocal" id="modeLocalLabel">本地模型</label>
                         <input type="radio" class="btn-check" name="recognizeMode" id="modeCloud" value="cloud" checked>
                         <label class="btn btn-outline-primary" for="modeCloud">云端提供商</label>
+                        <input type="radio" class="btn-check" name="recognizeMode" id="modeServer" value="server">
+                        <label class="btn btn-outline-primary" for="modeServer">服务端（需登录）</label>
                     </div>
                 </div>
 
@@ -256,6 +273,128 @@
                     </div>
                 </div>
 
+                <!-- 服务端设置：模型 + 账号 + 兑换码 + 地址（模型由服务端下发） -->
+                <div id="serverSettings" style="display: none;">
+                    <div class="mb-3">
+                        <label for="serverModelSelect" class="form-label">选择模型</label>
+                        <select id="serverModelSelect" class="form-select">
+                            <!-- 登录后从服务端 /api/v1/models 填充 -->
+                        </select>
+                        <div class="form-text">模型列表与计费规则由服务端下发。</div>
+                    </div>
+
+                    <!-- 账号：登录 / 注册 / 忘记密码 三个切换面板 -->
+                    <div id="serverAuthPanel" class="border rounded p-3 mb-3">
+                        <ul class="nav nav-pills nav-fill mb-3" role="tablist">
+                            <li class="nav-item"><button class="nav-link active" type="button" id="serverTabLogin">登录</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" id="serverTabRegister">注册</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" id="serverTabReset">忘记密码</button></li>
+                        </ul>
+
+                        <div id="serverLoginPane">
+                            <div class="mb-2">
+                                <label for="serverAccountInput" class="form-label mb-1">账号</label>
+                                <input type="text" id="serverAccountInput" class="form-control" autocomplete="off" placeholder="邮箱或用户名">
+                            </div>
+                            <div class="mb-2">
+                                <label for="serverPasswordInput" class="form-label mb-1">密码</label>
+                                <input type="password" id="serverPasswordInput" class="form-control" autocomplete="new-password" placeholder="密码">
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <button id="serverLoginButton" class="btn btn-primary" type="button">登录</button>
+                                <a id="serverRegisterLink" class="btn btn-outline-secondary" href="#" target="_blank" rel="noopener">去服务端网页注册</a>
+                            </div>
+                        </div>
+
+                        <div id="serverRegisterPane" style="display: none;">
+                            <div class="mb-2">
+                                <label for="serverRegEmail" class="form-label mb-1">邮箱</label>
+                                <input type="text" id="serverRegEmail" class="form-control" autocomplete="off" placeholder="you@example.com">
+                            </div>
+                            <div class="mb-2">
+                                <label for="serverRegUsername" class="form-label mb-1">用户名</label>
+                                <input type="text" id="serverRegUsername" class="form-control" autocomplete="off" placeholder="2-64 位字母、数字、下划线或连字符">
+                            </div>
+                            <div class="mb-2">
+                                <label for="serverRegPassword" class="form-label mb-1">密码</label>
+                                <input type="password" id="serverRegPassword" class="form-control" autocomplete="new-password" placeholder="密码">
+                            </div>
+                            <div class="mb-2" id="serverRegInviteGroup">
+                                <label for="serverRegInvite" class="form-label mb-1">邀请码</label>
+                                <input type="text" id="serverRegInvite" class="form-control" autocomplete="off" placeholder="邀请码">
+                            </div>
+                            <div class="mb-2" id="serverRegCodeGroup">
+                                <label for="serverRegCode" class="form-label mb-1">邮箱验证码</label>
+                                <div class="input-group">
+                                    <input type="text" id="serverRegCode" class="form-control me-1" autocomplete="off" placeholder="6 位验证码">
+                                    <button id="serverSendCodeButton" class="btn btn-outline-secondary ms-1" type="button">获取验证码</button>
+                                </div>
+                            </div>
+                            <button id="serverRegisterButton" class="btn btn-primary" type="button">注册并登录</button>
+                        </div>
+
+                        <div id="serverResetPane" style="display: none;">
+                            <div class="mb-2">
+                                <label for="serverResetEmail" class="form-label mb-1">邮箱</label>
+                                <input type="text" id="serverResetEmail" class="form-control" autocomplete="off" placeholder="注册邮箱">
+                            </div>
+                            <div class="mb-2">
+                                <label for="serverResetCode" class="form-label mb-1">验证码</label>
+                                <div class="input-group">
+                                    <input type="text" id="serverResetCode" class="form-control me-1" autocomplete="off" placeholder="6 位验证码">
+                                    <button id="serverSendResetCodeButton" class="btn btn-outline-secondary ms-1" type="button">发送重置码</button>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label for="serverResetPassword" class="form-label mb-1">新密码</label>
+                                <input type="password" id="serverResetPassword" class="form-control" autocomplete="new-password" placeholder="新密码">
+                            </div>
+                            <button id="serverResetButton" class="btn btn-primary" type="button">重置密码</button>
+                        </div>
+                    </div>
+
+                    <div id="serverAccountPanel" class="border rounded p-3 mb-3" style="display: none;">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div>
+                                <div class="small text-muted">当前账号</div>
+                                <div id="serverAccountLabel" class="fw-semibold">-</div>
+                            </div>
+                            <div class="text-end">
+                                <div class="small text-muted">余额（积分）</div>
+                                <div id="serverBalanceLabel" class="fw-semibold">-</div>
+                            </div>
+                            <div class="text-end">
+                                <div class="small text-muted">抽奖次数</div>
+                                <div id="serverLotteryLabel" class="fw-semibold">-</div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button id="serverCheckinButton" class="btn btn-sm btn-primary" type="button">每日签到</button>
+                            <button id="serverDrawButton" class="btn btn-sm btn-primary" type="button">抽奖</button>
+                            <button id="serverRefreshBalanceButton" class="btn btn-sm btn-success" type="button">刷新</button>
+                            <button id="serverUserCenterButton" class="btn btn-sm btn-secondary" type="button" title="打开服务端账号页：安全设置、设备管理、账单明细">用户中心</button>
+                            <button id="serverLogoutButton" class="btn btn-sm btn-outline-danger" type="button">退出登录</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="serverRedeemInput" class="form-label mb-1">兑换码</label>
+                        <div class="input-group">
+                            <input type="text" id="serverRedeemInput" class="form-control me-1" autocomplete="off" placeholder="输入兑换码">
+                            <button id="serverRedeemButton" class="btn btn-outline-primary ms-1" type="button">兑换</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="serverBaseUrlInput" class="form-label">服务端地址</label>
+                        <div class="input-group">
+                            <input type="text" id="serverBaseUrlInput" class="form-control me-1" placeholder="例如 https://api.example.com">
+                            <button id="saveServerBaseUrlButton" class="btn btn-primary ms-1" type="button">保存</button>
+                        </div>
+                        <div class="form-text">自建服务端时填自己的地址；留空则使用内置默认值。</div>
+                    </div>
+                </div>
+
                 <!-- 本地设置：仅桌面版显示 -->
                 <div id="localSettings" style="display: none;">
                     <label for="localModelSelect" class="form-label">本地模型</label>
@@ -275,6 +414,52 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" data-bs-dismiss="modal">完成</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 反馈弹窗：差评时提交困难样本（需授权并携带原图） -->
+<div class="modal fade" id="feedbackModal" tabindex="-1" aria-labelledby="feedbackModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="feedbackModalLabel">反馈识别问题</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">提供正确的 LaTeX 有助于我们测试和改进模型。经审核确认可用后，识别失败补偿将翻倍。</p>
+                <div class="mb-3">
+                    <label for="feedbackCorrectionInput" class="form-label">修正后的 LaTeX（选填）</label>
+                    <textarea id="feedbackCorrectionInput" class="form-control" rows="3" placeholder="知道正确结果的话，可以填在这里"></textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="feedbackProblemType" class="form-label">问题类型（选填）</label>
+                        <select id="feedbackProblemType" class="form-select">
+                            <option value="">未选择</option>
+                            <option value="wrong_content">识别内容错误</option>
+                            <option value="missing_part">内容缺失</option>
+                            <option value="format_error">格式错误</option>
+                            <option value="unreadable">图片本身不清晰</option>
+                            <option value="other">其它</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="feedbackCommentInput" class="form-label">补充说明（选填）</label>
+                        <input type="text" id="feedbackCommentInput" class="form-control" placeholder="例如：第二个积分号被识别成了求和号">
+                    </div>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="feedbackConsent">
+                    <label class="form-check-label" for="feedbackConsent">
+                        我同意将该图片用于内部模型测试和改进（图片不会默认公开发布）
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="feedbackSubmitButton">提交反馈</button>
             </div>
         </div>
     </div>
@@ -300,6 +485,7 @@
 </div>
 
 <script src="./bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="service.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

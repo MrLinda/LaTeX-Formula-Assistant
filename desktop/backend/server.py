@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -269,6 +270,24 @@ def open_models_directory() -> JSONResponse:
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"无法打开模型目录：{exc}")
     return JSONResponse({"ok": True, "directory": str(path)})
+
+
+class OpenExternalRequest(BaseModel):
+    url: str
+
+
+@app.post("/api/open-external")
+def open_external(payload: OpenExternalRequest) -> JSONResponse:
+    """用系统默认浏览器打开 http/https 链接（用户中心等外链）。
+
+    pywebview 里 window.open 弹窗不可靠，前端经此接口交给系统浏览器。
+    仅放行 http/https，防止 file:// 等方案被滥用。
+    """
+    if not re.match(r"^https?://", payload.url):
+        raise HTTPException(status_code=400, detail="仅支持 http/https 链接")
+    if not webbrowser.open(payload.url):
+        raise HTTPException(status_code=500, detail="无法打开系统浏览器")
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/models/download/progress")

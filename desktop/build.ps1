@@ -1,4 +1,4 @@
-# 构建 onedir 绿色版，并压成 zip。
+﻿# 构建 onedir 绿色版，并压成 zip。
 #
 # 用法（仓库根目录）：
 #     .\desktop\build.ps1

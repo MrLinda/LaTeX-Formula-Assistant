@@ -1,12 +1,16 @@
 // 模型与提供商配置文件
 //
-// 识别方式两种：
+// 识别方式三种：
 //   local  -> 走本地 Python 后端（仅 PyWebView 桌面版），无需 API 密钥
 //   cloud  -> 走云端提供商 API，需对应提供商的 API 密钥
+//   server -> 走私有服务端（LaTeX Formula Assistant Server），需登录
 //
 // 云端按"提供商"组织：以后接新厂商只需在 providerConfig 里加一条，
 // 设置弹窗的"提供商"下拉会自动出现，其余逻辑（密钥、模型下拉、
 // 接口地址、错误文案）都从这里派生。
+//
+// 服务端不走 providerConfig：它的识别接口是 multipart（model_id + 图片文件），
+// 与上面的 OpenAI chat/completions 协议不同，因此单独配置、单独封装（见 service.js）。
 
 // === 云端提供商注册表（key = 提供商 id） ===
 const providerConfig = {
@@ -43,12 +47,23 @@ const localModelConfig = {
     }
 };
 
+// === 私有服务端 ===
+// baseUrl 是默认地址；用户在设置弹窗里填写的地址会覆盖它（存 localStorage 的
+// serverBaseUrl），自建服务端的人无需改代码。
+const serverConfig = {
+    name: "官方服务端",
+    baseUrl: "https://lfa.luxiaoxiao.work"
+};
+
 // ---- 存储键 ----
-// recognizeMode:     'local' | 'cloud'（仅桌面版有意义）
+// recognizeMode:     'local' | 'cloud' | 'server'
 // selectedProvider:  云端提供商 id
 // apiKey_<provider>: 按提供商分开存的 API 密钥
 // selectedModel:     云端选中的模型 key（沿用旧键，方便迁移）
 // selectedLocalModel: 本地选中的模型 key
+// serverBaseUrl:     服务端地址（覆盖 serverConfig.baseUrl）
+// selectedServerModelId: 服务端选中的模型 id（由服务端 /api/v1/models 下发）
+// server_access_token / server_refresh_token / server_account / server_user: 服务端会话（见 service.js）
 
 function isDesktopEnv() {
     return typeof window !== 'undefined' && !!window.LOCAL_API_BASE;
@@ -89,16 +104,33 @@ function migrateSettings() {
 }
 
 function getRecognizeMode() {
-    if (!isDesktopEnv()) return 'cloud';
     let saved = null;
     try { saved = localStorage.getItem('recognizeMode'); } catch (_) { /* 读不到走默认 */ }
-    return saved === 'local' ? 'local' : 'cloud';
+    if (saved === 'server') return 'server';
+    // local 只在桌面版成立，网页版退回云端
+    if (saved === 'local') return isDesktopEnv() ? 'local' : 'cloud';
+    return 'cloud';
 }
 
 function setRecognizeMode(mode) {
+    const value = (mode === 'local' || mode === 'server') ? mode : 'cloud';
     try {
-        localStorage.setItem('recognizeMode', mode === 'local' ? 'local' : 'cloud');
+        localStorage.setItem('recognizeMode', value);
     } catch (_) { /* 存不上不影响本次使用 */ }
+}
+
+// 服务端地址：localStorage 里的值优先，其次 config.js 的默认值；统一去掉末尾斜杠
+function getServerBaseUrl() {
+    let saved = '';
+    try { saved = localStorage.getItem('serverBaseUrl') || ''; } catch (_) { /* 走默认 */ }
+    const base = (saved || (typeof serverConfig !== 'undefined' ? serverConfig.baseUrl : '') || '').trim();
+    return base.replace(/\/+$/, '');
+}
+
+function setServerBaseUrl(url) {
+    const value = (url || '').trim().replace(/\/+$/, '');
+    try { localStorage.setItem('serverBaseUrl', value); } catch (_) { /* 忽略 */ }
+    return value;
 }
 
 // 当前提供商：存的 id 不在注册表里（比如以后被删掉）就退回第一个
@@ -266,14 +298,16 @@ function getSelectedLocalModelName() {
     return localModelConfig[key] ? localModelConfig[key].name : '';
 }
 
-// 按识别方式切换弹窗里"云端设置 / 本地设置"两块的可见性，
+// 按识别方式切换弹窗里"云端设置 / 服务端设置 / 本地设置"三块的可见性，
 // 并刷新 API 密钥标签上的提供商名
 function applySettingsVisibility() {
     const cloud = document.getElementById('cloudSettings');
     const local = document.getElementById('localSettings');
+    const server = document.getElementById('serverSettings');
     const mode = getRecognizeMode();
     if (cloud) cloud.style.display = mode === 'cloud' ? '' : 'none';
     if (local) local.style.display = mode === 'local' ? '' : 'none';
+    if (server) server.style.display = mode === 'server' ? '' : 'none';
 
     const label = document.getElementById('apiKeyProviderName');
     const provider = getSelectedProvider();
@@ -284,16 +318,23 @@ function applySettingsVisibility() {
 function initSettingsUI() {
     migrateSettings();
 
-    // 识别方式只在桌面版露出；纯 web 恒为云端
+    // 识别方式：本地模型只在桌面版露出；云端提供商与服务端两端都有
     const modeGroup = document.getElementById('recognizeModeGroup');
-    if (modeGroup) modeGroup.style.display = isDesktopEnv() ? '' : 'none';
+    if (modeGroup) modeGroup.style.display = '';
+    if (!isDesktopEnv()) {
+        ['modeLocal', 'modeLocalLabel'].forEach(function(id) {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+    }
 
     generateProviderOptions();
     generateModelOptions();
     generateLocalModelOptions();
 
     const mode = getRecognizeMode();
-    const modeRadio = document.getElementById(mode === 'local' ? 'modeLocal' : 'modeCloud');
+    const modeRadioIds = { local: 'modeLocal', cloud: 'modeCloud', server: 'modeServer' };
+    const modeRadio = document.getElementById(modeRadioIds[mode]);
     if (modeRadio) modeRadio.checked = true;
 
     applySettingsVisibility();
@@ -304,10 +345,13 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         providerConfig,
         localModelConfig,
+        serverConfig,
         initSettingsUI,
         applySettingsVisibility,
         getRecognizeMode,
         setRecognizeMode,
+        getServerBaseUrl,
+        setServerBaseUrl,
         getSelectedProviderId,
         getSelectedProvider,
         saveSelectedProvider,
@@ -320,10 +364,13 @@ if (typeof module !== 'undefined' && module.exports) {
 } else if (typeof window !== 'undefined') {
     window.providerConfig = providerConfig;
     window.localModelConfig = localModelConfig;
+    window.serverConfig = serverConfig;
     window.initSettingsUI = initSettingsUI;
     window.applySettingsVisibility = applySettingsVisibility;
     window.getRecognizeMode = getRecognizeMode;
     window.setRecognizeMode = setRecognizeMode;
+    window.getServerBaseUrl = getServerBaseUrl;
+    window.setServerBaseUrl = setServerBaseUrl;
     window.getSelectedProviderId = getSelectedProviderId;
     window.getSelectedProvider = getSelectedProvider;
     window.saveSelectedProvider = saveSelectedProvider;

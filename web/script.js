@@ -6,6 +6,11 @@ let historyList = [];
 // 历史记录最大数量
 const MAX_HISTORY_ITEMS = 20;
 
+// 最近一次上传的图片（用于差评反馈时上传原图）
+let lastImageBlob = null;
+// 最近一次服务端识别的结果 { id, blob }；非服务端识别时为 null
+let lastServerRecognition = null;
+
 document.addEventListener('DOMContentLoaded', function() {
     // 从本地存储加载历史记录
     loadHistory();
@@ -69,6 +74,30 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof initSettingsUI === 'function') {
         initSettingsUI();
     }
+
+    // 服务端设置区块（地址、登录、余额、兑换码、模型下拉）
+    if (typeof initServerSettingsUI === 'function') {
+        initServerSettingsUI();
+    }
+
+    // 识别结果反馈按钮
+    const feedbackGoodButton = document.getElementById('feedbackGoodButton');
+    if (feedbackGoodButton) feedbackGoodButton.addEventListener('click', sendGoodFeedback);
+    const feedbackBadButton = document.getElementById('feedbackBadButton');
+    if (feedbackBadButton) feedbackBadButton.addEventListener('click', openFeedbackModal);
+    const feedbackSubmitButton = document.getElementById('feedbackSubmitButton');
+    if (feedbackSubmitButton) feedbackSubmitButton.addEventListener('click', submitBadFeedback);
+
+    // 已登录服务端账号时静默恢复会话（必要时刷新 access），并拉模型与公告
+    if (typeof isServerLoggedIn === 'function' && isServerLoggedIn()) {
+        serviceEnsureAccessToken(false).then(function() {
+            renderServerAuthState();
+            refreshServerModels();
+            // 缓存的用户对象可能是老数据（没有抽奖次数字段），恢复会话时拉一次完整账号信息
+            refreshServerAccount();
+        });
+    }
+    loadAnnouncements();
     
     // 监听模型选择变化
     document.getElementById('modelSelect').addEventListener('change', function() {
@@ -107,12 +136,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // 监听识别方式切换（本地 / 云端，仅桌面版显示该选项）
+    // 监听识别方式切换（本地 / 云端 / 服务端）
     document.querySelectorAll('input[name="recognizeMode"]').forEach(function(radio) {
         radio.addEventListener('change', function() {
             if (!this.checked) return;
             if (typeof setRecognizeMode === 'function') setRecognizeMode(this.value);
             if (typeof applySettingsVisibility === 'function') applySettingsVisibility();
+            if (this.value === 'server') {
+                renderServerAuthState();
+                if (typeof isServerLoggedIn === 'function' && isServerLoggedIn()) {
+                    refreshServerModels();
+                }
+            }
         });
     });
 
@@ -355,6 +390,7 @@ function processImage(file) {
 
     reader.onload = function(event) {
         const base64Data = event.target.result.split(',')[1];
+        lastImageBlob = file;
 
         // 显示图片预览
         const imagePreview = document.getElementById('imagePreview');
@@ -367,10 +403,15 @@ function processImage(file) {
     reader.readAsDataURL(file);
 }
 
-// 调用识别 API：按"识别方式"分流 —— local 走桌面版本地推理，cloud 走当前云端提供商
+// 调用识别 API：按"识别方式"分流 —— local 走桌面版本地推理，
+// server 走私有服务端，cloud 走当前云端提供商
 async function callCustomAPI(base64Data) {
-    if (typeof getRecognizeMode === 'function' && getRecognizeMode() === 'local') {
+    const mode = typeof getRecognizeMode === 'function' ? getRecognizeMode() : 'cloud';
+    if (mode === 'local') {
         return callLocalAPI(base64Data, getSelectedLocalModelName());
+    }
+    if (mode === 'server') {
+        return callServerAPI(base64Data);
     }
     return callCloudAPI(base64Data);
 }
@@ -399,7 +440,7 @@ function applyRecognitionResult(rawLatex, stats) {
     updateUsageDisplay(stats);
 }
 
-// 本地推理不消耗 API Token，改为展示推理耗时
+// 本地推理不消耗 API Token，改为展示推理耗时；服务端识别额外展示扣费积分
 function updateUsageDisplay(stats) {
     const label = document.getElementById('usageLabel');
     const value = document.getElementById('tokenCountDisplay');
@@ -408,9 +449,15 @@ function updateUsageDisplay(stats) {
     if (stats && typeof stats.elapsed === 'number') {
         label.textContent = '推理耗时';
         value.textContent = stats.elapsed.toFixed(2) + 's';
+        return;
+    }
+
+    const tokens = stats && typeof stats.tokens === 'number' ? stats.tokens : 0;
+    if (stats && typeof stats.points === 'number') {
+        label.textContent = '本次使用Tokens / 扣费';
+        value.textContent = tokens + ' / ' + formatPoints(stats.points) + ' 积分';
     } else {
         label.textContent = '本次使用Tokens';
-        const tokens = stats && typeof stats.tokens === 'number' ? stats.tokens : 0;
         value.textContent = tokens;
     }
 }
@@ -693,6 +740,737 @@ async function callCloudAPI(base64Data) {
         applyRecognitionResult(data.choices[0].message.content, { tokens: totalTokens });
     } else {
         showAlert('识别失败：模型返回了空内容，请尝试其他图片或切换模型。');
+    }
+}
+
+/* ==========================================================================
+   私有服务端（LaTeX Formula Assistant Server）识别方式
+   - 识别：POST /api/v1/recognitions（multipart），返回 recognition_id
+   - 反馈：好/坏评价，差评可上传原图与修正 LaTeX
+   - 账号：登录态、余额、兑换码、公告
+   会话与 API 细节都在 service.js，这里只负责界面与流程编排。
+   ========================================================================== */
+
+// 积分统一显示 4 位小数（与服务端展示层约定一致）
+function formatPoints(points) {
+    const n = Number(points);
+    if (!isFinite(n)) return '0.0000';
+    return n.toFixed(4);
+}
+
+// 服务端识别失败时的文案分流
+function reportServerAPIError(error) {
+    const status = error && error.status;
+    const message = error && error.message;
+
+    if (error && error.name === 'ServerAPIError') {
+        if (error.code === 'no_base_url') {
+            return showAlert('未配置服务端地址：请打开「⚙ 设置」填写服务端地址并保存。');
+        }
+        if (error.code === 'network_error') {
+            return showAlert('网络连接错误：无法连接到服务端，请检查地址、网络或代理。');
+        }
+        if (status === 401) {
+            if (typeof clearServerSession === 'function') clearServerSession();
+            renderServerAuthState();
+            return showAlert('登录已失效，请重新登录服务端账号。');
+        }
+        if (status === 402) {
+            return showAlert('积分不足：请在服务端账户页充值或使用兑换码后再试。');
+        }
+        if (status === 429) {
+            return showAlert(message || '当前识别请求过多，请稍后重试。');
+        }
+        if (status === 502) {
+            return showAlert(message || '云端模型暂时不可用，本次未扣费。');
+        }
+        if (status >= 500) {
+            return showAlert('服务端错误（' + status + '）：请稍后重试。');
+        }
+        return showAlert(message || ('识别失败（HTTP ' + status + '）'));
+    }
+    return showAlert('识别失败：' + (message || String(error)));
+}
+
+// 调用私有服务端识别
+async function callServerAPI(base64Data) {
+    if (!navigator.onLine) {
+        hideLoading();
+        return showAlert('网络连接错误：当前无网络，请检查网络后重试。');
+    }
+    if (typeof getServerBaseUrl !== 'function' || !getServerBaseUrl()) {
+        hideLoading();
+        return showAlert('未配置服务端地址：请打开「⚙ 设置」→ 识别方式选「服务端」，填写服务端地址并保存。');
+    }
+    if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) {
+        hideLoading();
+        return showAlert('尚未登录服务端账号：请打开「⚙ 设置」登录后再试。');
+    }
+    const modelId = typeof getSelectedServerModelId === 'function' ? getSelectedServerModelId() : '';
+    if (!modelId) {
+        hideLoading();
+        return showAlert('未选择模型：请在「⚙ 设置」中选择服务端模型。');
+    }
+
+    hideFeedbackButtons();
+
+    let result;
+    try {
+        result = await serviceRecognize(base64Data, modelId);
+    } catch (error) {
+        hideLoading();
+        return reportServerAPIError(error);
+    }
+    hideLoading();
+
+    if (!result || typeof result.latex !== 'string') {
+        return showAlert('识别失败：服务端返回了空内容，请尝试其他图片或切换模型。');
+    }
+
+    lastServerRecognition = {
+        id: result.recognition_id || '',
+        blob: lastImageBlob
+    };
+    applyRecognitionResult(result.latex, {
+        tokens: (result.input_tokens || 0) + (result.output_tokens || 0),
+        points: typeof result.charged_points === 'number' ? result.charged_points : undefined
+    });
+    updateFeedbackButtons();
+    refreshServerAccount();
+}
+
+// ---- 反馈 ----
+
+function updateFeedbackButtons() {
+    const wrap = document.getElementById('feedbackButtons');
+    if (!wrap) return;
+    wrap.style.display = (lastServerRecognition && lastServerRecognition.id) ? '' : 'none';
+}
+
+function hideFeedbackButtons() {
+    lastServerRecognition = null;
+    const wrap = document.getElementById('feedbackButtons');
+    if (wrap) wrap.style.display = 'none';
+}
+
+async function sendGoodFeedback() {
+    if (!lastServerRecognition || !lastServerRecognition.id) return;
+    try {
+        await serviceSendFeedback(lastServerRecognition.id, { rating: 'good' });
+        showToast('感谢反馈');
+        hideFeedbackButtons();
+    } catch (error) {
+        showAlert('反馈提交失败：' + (error.message || error));
+    }
+}
+
+function openFeedbackModal() {
+    if (!lastServerRecognition || !lastServerRecognition.id) {
+        showAlert('没有可反馈的识别记录，请先识别一张图片。');
+        return;
+    }
+    const modalEl = document.getElementById('feedbackModal');
+    if (!modalEl) return;
+
+    const consent = document.getElementById('feedbackConsent');
+    if (consent) consent.checked = false;
+
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
+async function submitBadFeedback() {
+    if (!lastServerRecognition || !lastServerRecognition.id) return;
+
+    const consent = document.getElementById('feedbackConsent');
+    if (!consent || !consent.checked) {
+        return showAlert('请先勾选同意将图片用于内部测试');
+    }
+    if (!lastServerRecognition.blob) {
+        return showAlert('缺少原始图片，无法提交困难样本。');
+    }
+
+    const correctionInput = document.getElementById('feedbackCorrectionInput');
+    const problemType = document.getElementById('feedbackProblemType');
+    const commentInput = document.getElementById('feedbackCommentInput');
+
+    const button = document.getElementById('feedbackSubmitButton');
+    if (button) button.disabled = true;
+    try {
+        const data = await serviceSendFeedback(lastServerRecognition.id, {
+            rating: 'bad',
+            imageBlob: lastServerRecognition.blob,
+            correctionLatex: correctionInput ? correctionInput.value.trim() : '',
+            problemType: problemType ? problemType.value : '',
+            comment: commentInput ? commentInput.value.trim() : ''
+        });
+
+        const modalEl = document.getElementById('feedbackModal');
+        if (modalEl) {
+            const instance = bootstrap.Modal.getInstance(modalEl);
+            if (instance) instance.hide();
+        }
+        showToast(data && data.feedback_id ? '反馈已提交，审核通过后发放补偿' : '反馈已提交');
+        hideFeedbackButtons();
+    } catch (error) {
+        showAlert('反馈提交失败：' + (error.message || error));
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+// ---- 账号、余额、兑换码 ----
+
+function renderServerAuthState() {
+    const loggedIn = typeof isServerLoggedIn === 'function' && isServerLoggedIn();
+
+    const auth = document.getElementById('serverAuthPanel');
+    const panel = document.getElementById('serverAccountPanel');
+    if (auth) auth.style.display = loggedIn ? 'none' : '';
+    if (panel) panel.style.display = loggedIn ? '' : 'none';
+
+    if (!loggedIn) {
+        // 退出登录后回到「登录」页签
+        showServerAuthTab('login');
+        return;
+    }
+
+    const user = typeof getServerUser === 'function' ? (getServerUser() || {}) : {};
+    const accountLabel = document.getElementById('serverAccountLabel');
+    if (accountLabel) {
+        accountLabel.textContent = (typeof getServerAccount === 'function' && getServerAccount())
+            || user.email || user.username || '-';
+    }
+    renderServerBalance(user.balance_points);
+    renderServerLottery(user.lottery_chances);
+}
+
+function renderServerBalance(points) {
+    const el = document.getElementById('serverBalanceLabel');
+    if (!el) return;
+    el.textContent = typeof points === 'number' ? formatPoints(points) : '-';
+    el.classList.remove('text-muted');
+}
+
+// 抽奖次数为 undefined（旧版服务端无此字段）时只把标签置为「-」，
+// 不动抽奖按钮的禁用状态，避免误禁用。
+function renderServerLottery(chances) {
+    const label = document.getElementById('serverLotteryLabel');
+    const button = document.getElementById('serverDrawButton');
+    if (label) {
+        label.textContent = typeof chances === 'number' ? String(chances) : '-';
+        if (typeof chances === 'number') label.classList.remove('text-muted');
+    }
+    if (button && typeof chances === 'number') button.disabled = chances < 1;
+}
+
+function renderServerModelOptions() {
+    const select = document.getElementById('serverModelSelect');
+    if (!select) return;
+
+    const models = typeof getServerModelsFromCache === 'function' ? getServerModelsFromCache() : [];
+    select.innerHTML = '';
+
+    if (!models.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = (typeof isServerLoggedIn === 'function' && isServerLoggedIn())
+            ? '（暂无可用模型）'
+            : '（登录后加载）';
+        option.disabled = true;
+        select.appendChild(option);
+        return;
+    }
+
+    models.forEach(function(model) {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.display_name || model.id;
+        select.appendChild(option);
+    });
+
+    const saved = typeof getSelectedServerModelId === 'function' ? getSelectedServerModelId() : '';
+    const hasSaved = saved && models.some(function(model) { return model.id === saved; });
+    if (hasSaved) {
+        select.value = saved;
+    } else if (typeof saveSelectedServerModelId === 'function') {
+        saveSelectedServerModelId(models[0].id);
+    }
+}
+
+async function refreshServerModels() {
+    if (typeof serviceFetchModels !== 'function') return;
+    try {
+        await serviceFetchModels();
+        renderServerModelOptions();
+    } catch (_) {
+        // 拉不到就沿用缓存，不打扰用户
+        renderServerModelOptions();
+    }
+}
+
+let serverBalanceRefreshing = false;
+
+async function refreshServerAccount() {
+    if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) return;
+    if (serverBalanceRefreshing) return;
+    serverBalanceRefreshing = true;
+
+    const label = document.getElementById('serverBalanceLabel');
+    const lotteryLabel = document.getElementById('serverLotteryLabel');
+    const button = document.getElementById('serverRefreshBalanceButton');
+    const previous = label ? label.textContent : null;
+    const previousLottery = lotteryLabel ? lotteryLabel.textContent : null;
+    // 即时反馈：余额与抽奖次数先变「读取中…」，请求回来再替换成数字
+    if (label) {
+        label.textContent = '读取中…';
+        label.classList.add('text-muted');
+    }
+    if (lotteryLabel) {
+        lotteryLabel.textContent = '读取中…';
+        lotteryLabel.classList.add('text-muted');
+    }
+    if (button) button.disabled = true;
+    try {
+        const user = await serviceFetchMe();
+        renderServerAuthState();
+        if (user && typeof user.balance_points === 'number') {
+            renderServerBalance(user.balance_points);
+        }
+    } catch (_) {
+        // 刷新失败恢复原值并提示，不阻塞识别
+        if (label) {
+            label.textContent = previous || '-';
+            label.classList.remove('text-muted');
+        }
+        if (lotteryLabel) {
+            lotteryLabel.textContent = previousLottery || '-';
+            lotteryLabel.classList.remove('text-muted');
+        }
+        if (typeof showToast === 'function') showToast('账号信息刷新失败');
+    } finally {
+        if (button) button.disabled = false;
+        serverBalanceRefreshing = false;
+    }
+}
+
+async function serverLoginHandler() {
+    const accountInput = document.getElementById('serverAccountInput');
+    const passwordInput = document.getElementById('serverPasswordInput');
+    const identifier = accountInput ? accountInput.value.trim() : '';
+    const password = passwordInput ? passwordInput.value : '';
+
+    if (typeof getServerBaseUrl !== 'function' || !getServerBaseUrl()) {
+        return showAlert('请先填写并保存服务端地址');
+    }
+    if (!identifier || !password) {
+        return showAlert('请输入账号和密码');
+    }
+
+    const button = document.getElementById('serverLoginButton');
+    if (button) button.disabled = true;
+    try {
+        await serviceLogin(identifier, password);
+        if (passwordInput) passwordInput.value = '';
+        renderServerAuthState();
+        await refreshServerModels();
+        // 登录响应不带 lottery_chances，拉一次账号信息补上，次数标签才不是「-」
+        refreshServerAccount();
+        showToast('登录成功');
+    } catch (error) {
+        showAlert('登录失败：' + (error.message || error));
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function serverLogoutHandler() {
+    try {
+        await serviceLogout();
+    } catch (_) { /* 本地登出照常完成 */ }
+    renderServerAuthState();
+    hideFeedbackButtons();
+    renderServerModelOptions();
+    showToast('已退出登录');
+}
+
+// 用户中心：服务端账号页（安全设置 / 设备管理 / 账单明细在那边）
+async function openUserCenterHandler() {
+    if (typeof getServerBaseUrl !== 'function' || !getServerBaseUrl()) {
+        return showAlert('请先填写并保存服务端地址');
+    }
+    const url = getServerBaseUrl() + '/account/';
+    // 桌面版 pywebview 里 window.open 弹窗不可靠，交给本地后端用系统浏览器打开；
+    // 网页版直接新开标签页。账号页有独立登录，与客户端的登录态互不相通。
+    if (typeof isDesktopEnv === 'function' && isDesktopEnv()) {
+        try {
+            const resp = await fetch(window.LOCAL_API_BASE + '/api/open-external', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            });
+            if (!resp.ok) throw new Error('open failed');
+            return;
+        } catch (_) {
+            return showAlert('无法打开系统浏览器，请手动访问：' + url);
+        }
+    }
+    window.open(url, '_blank', 'noopener');
+}
+
+// ---- 登录 / 注册 / 忘记密码 三个页签 ----
+
+const SERVER_AUTH_TABS = {
+    login: { tab: 'serverTabLogin', pane: 'serverLoginPane' },
+    register: { tab: 'serverTabRegister', pane: 'serverRegisterPane' },
+    reset: { tab: 'serverTabReset', pane: 'serverResetPane' }
+};
+
+function showServerAuthTab(name) {
+    const active = SERVER_AUTH_TABS[name] ? name : 'login';
+    Object.keys(SERVER_AUTH_TABS).forEach(function(key) {
+        const ids = SERVER_AUTH_TABS[key];
+        const tab = document.getElementById(ids.tab);
+        const pane = document.getElementById(ids.pane);
+        if (tab) tab.classList.toggle('active', key === active);
+        if (pane) pane.style.display = key === active ? '' : 'none';
+    });
+    if (active === 'register') serverApplyRegisterPolicy();
+}
+
+// 按服务端下发的注册要求，显示/隐藏邀请码与邮箱验证码两项
+async function serverApplyRegisterPolicy() {
+    if (typeof serviceFetchRegisterPolicy !== 'function') return;
+    const policy = await serviceFetchRegisterPolicy();
+    const inviteGroup = document.getElementById('serverRegInviteGroup');
+    const codeGroup = document.getElementById('serverRegCodeGroup');
+    if (inviteGroup) inviteGroup.style.display = policy.require_invite ? '' : 'none';
+    if (codeGroup) codeGroup.style.display = policy.email_verification ? '' : 'none';
+}
+
+// 验证码按钮倒计时，避免撞上服务端的发送冷却
+function startCountdown(button, seconds, idleText) {
+    if (!button) return;
+    let left = seconds;
+    button.disabled = true;
+    button.textContent = left + 's';
+    const timer = setInterval(function() {
+        left -= 1;
+        if (left <= 0) {
+            clearInterval(timer);
+            button.disabled = false;
+            button.textContent = idleText;
+            return;
+        }
+        button.textContent = left + 's';
+    }, 1000);
+}
+
+async function serverSendCodeHandler() {
+    const emailInput = document.getElementById('serverRegEmail');
+    const email = emailInput ? emailInput.value.trim() : '';
+    if (!email) return showAlert('请先填写邮箱');
+
+    const button = document.getElementById('serverSendCodeButton');
+    if (button) button.disabled = true;
+    try {
+        await serviceSendEmailCode(email);
+        showToast('验证码已发送，请查收邮件');
+        startCountdown(button, 60, '获取验证码');
+    } catch (error) {
+        // 服务端未配置邮件：本就不需要验证码
+        if (error && error.code === 'smtp_disabled') {
+            showToast('该服务端无需邮箱验证');
+        } else {
+            showAlert('验证码发送失败：' + (error.message || error));
+        }
+        if (button) button.disabled = false;
+    }
+}
+
+async function serverSendResetCodeHandler() {
+    const emailInput = document.getElementById('serverResetEmail');
+    const email = emailInput ? emailInput.value.trim() : '';
+    if (!email) return showAlert('请先填写邮箱');
+
+    const button = document.getElementById('serverSendResetCodeButton');
+    if (button) button.disabled = true;
+    try {
+        await serviceSendResetCode(email);
+        showToast('重置码已发送，请查收邮件');
+        startCountdown(button, 60, '发送重置码');
+    } catch (error) {
+        if (error && error.code === 'smtp_disabled') {
+            showAlert('该服务端未配置邮件，请联系管理员重置密码');
+        } else {
+            showAlert('重置码发送失败：' + (error.message || error));
+        }
+        if (button) button.disabled = false;
+    }
+}
+
+async function serverRegisterHandler() {
+    const emailInput = document.getElementById('serverRegEmail');
+    const usernameInput = document.getElementById('serverRegUsername');
+    const passwordInput = document.getElementById('serverRegPassword');
+    const inviteInput = document.getElementById('serverRegInvite');
+    const codeInput = document.getElementById('serverRegCode');
+
+    const inviteGroup = document.getElementById('serverRegInviteGroup');
+    const codeGroup = document.getElementById('serverRegCodeGroup');
+    const inviteVisible = inviteGroup ? inviteGroup.style.display !== 'none' : true;
+    const codeVisible = codeGroup ? codeGroup.style.display !== 'none' : false;
+
+    const email = emailInput ? emailInput.value.trim() : '';
+    const username = usernameInput ? usernameInput.value.trim() : '';
+    const password = passwordInput ? passwordInput.value : '';
+
+    if (!email || !username || !password) {
+        return showAlert('请填写邮箱、用户名和密码');
+    }
+
+    const button = document.getElementById('serverRegisterButton');
+    if (button) button.disabled = true;
+    try {
+        await serviceRegister({
+            email: email,
+            username: username,
+            password: password,
+            inviteCode: inviteVisible && inviteInput ? inviteInput.value.trim() : '',
+            emailCode: codeVisible && codeInput ? codeInput.value.trim() : ''
+        });
+        // 服务端注册不签发令牌：注册成功后立即用同一组凭据登录
+        await serviceLogin(email, password);
+        if (passwordInput) passwordInput.value = '';
+        renderServerAuthState();
+        await refreshServerModels();
+        refreshServerAccount();
+        showToast('注册成功，已自动登录');
+    } catch (error) {
+        showAlert('注册失败：' + (error.message || error));
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function serverResetHandler() {
+    const emailInput = document.getElementById('serverResetEmail');
+    const codeInput = document.getElementById('serverResetCode');
+    const passwordInput = document.getElementById('serverResetPassword');
+
+    const email = emailInput ? emailInput.value.trim() : '';
+    const code = codeInput ? codeInput.value.trim() : '';
+    const newPassword = passwordInput ? passwordInput.value : '';
+
+    if (!email || !code || !newPassword) {
+        return showAlert('请填写邮箱、验证码和新密码');
+    }
+
+    const button = document.getElementById('serverResetButton');
+    if (button) button.disabled = true;
+    try {
+        await serviceResetPassword({ email: email, code: code, newPassword: newPassword });
+        if (passwordInput) passwordInput.value = '';
+        if (codeInput) codeInput.value = '';
+        // 重置会吊销全部会话；这里本就未登录，切回登录页签并回填邮箱
+        const accountInput = document.getElementById('serverAccountInput');
+        if (accountInput) accountInput.value = email;
+        showServerAuthTab('login');
+        showToast('密码已重置，请用新密码登录');
+    } catch (error) {
+        showAlert('密码重置失败：' + (error.message || error));
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function serverCheckinHandler() {
+    if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) return;
+    const button = document.getElementById('serverCheckinButton');
+    if (button) button.disabled = true;
+    try {
+        const data = await serviceCheckIn();
+        if (data.draw_granted) {
+            showToast('签到成功，获得 1 次抽奖机会！');
+        } else {
+            showToast('签到成功，本次未获得抽奖机会');
+        }
+        renderServerBalance(data.balance_points);
+        renderServerLottery(data.lottery_chances);
+    } catch (error) {
+        if (error && error.code === 'already_checked_in') {
+            showToast('今天已经签到过了');
+        } else if (error && error.code === 'checkin_disabled') {
+            showToast('签到活动未开启');
+        } else {
+            showAlert('签到失败：' + (error.message || error));
+        }
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function serverDrawHandler() {
+    if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) return;
+    const button = document.getElementById('serverDrawButton');
+    if (button) button.disabled = true;
+    try {
+        const data = await serviceDrawLottery();
+        showToast('恭喜！抽中 ' + formatPoints(data.granted_points) + ' 积分');
+        renderServerBalance(data.balance_points);
+        renderServerLottery(data.lottery_chances);
+    } catch (error) {
+        if (error && error.code === 'no_draws') {
+            showToast('没有可用的抽奖次数，先去签到吧');
+            refreshServerAccount();
+        } else if (error && error.code === 'lottery_disabled') {
+            showToast('抽奖活动未开启');
+        } else {
+            showAlert('抽奖失败：' + (error.message || error));
+        }
+    } finally {
+        // 无论成败都按最新次数恢复状态：次数已知为 0 时保持禁用，
+        // 未知（旧版服务端）或大于 0 时恢复可点击
+        const user = typeof getServerUser === 'function' ? (getServerUser() || {}) : {};
+        const chances = typeof user.lottery_chances === 'number' ? user.lottery_chances : undefined;
+        renderServerLottery(chances);
+        if (button) button.disabled = chances === 0;
+    }
+}
+
+async function redeemCode() {
+    const input = document.getElementById('serverRedeemInput');
+    const code = input ? input.value.trim() : '';
+
+    if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) {
+        return showAlert('请先登录服务端账号');
+    }
+    if (!code) {
+        return showAlert('请输入兑换码');
+    }
+
+    const button = document.getElementById('serverRedeemButton');
+    if (button) button.disabled = true;
+    try {
+        const data = await serviceRedeemCode(code);
+        if (input) input.value = '';
+        renderServerBalance(data.balance_points);
+        showToast('兑换成功，获得 ' + formatPoints(data.granted_points) + ' 积分');
+    } catch (error) {
+        showAlert('兑换失败：' + (error.message || error));
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+// ---- 公告 ----
+
+async function loadAnnouncements() {
+    const bar = document.getElementById('announcementBar');
+    if (!bar || typeof serviceFetchAnnouncements !== 'function') return;
+
+    let items = [];
+    try {
+        items = await serviceFetchAnnouncements(1);
+    } catch (_) { return; }
+
+    const latest = items && items[0];
+    if (!latest) {
+        bar.style.display = 'none';
+        return;
+    }
+
+    const titleEl = document.getElementById('announcementTitle');
+    const contentEl = document.getElementById('announcementContent');
+    // 公告是外部文本，按纯文本写入，避免注入 HTML
+    if (titleEl) titleEl.textContent = latest.title ? latest.title + '：' : '';
+    if (contentEl) contentEl.textContent = latest.content || '';
+    bar.style.display = '';
+}
+
+// ---- 设置弹窗里的服务端区块 ----
+
+function updateServerRegisterLink() {
+    const link = document.getElementById('serverRegisterLink');
+    if (!link) return;
+    const base = typeof getServerBaseUrl === 'function' ? getServerBaseUrl() : '';
+    link.href = base ? base + '/account/register' : '#';
+}
+
+function initServerSettingsUI() {
+    const baseInput = document.getElementById('serverBaseUrlInput');
+    if (baseInput) baseInput.value = typeof getServerBaseUrl === 'function' ? getServerBaseUrl() : '';
+
+    updateServerRegisterLink();
+    renderServerAuthState();
+    renderServerModelOptions();
+
+    const saveButton = document.getElementById('saveServerBaseUrlButton');
+    if (saveButton) {
+        saveButton.addEventListener('click', function() {
+            const saved = setServerBaseUrl(baseInput ? baseInput.value : '');
+            if (baseInput) baseInput.value = saved;
+            updateServerRegisterLink();
+            showToast('服务端地址已保存');
+            if (typeof isServerLoggedIn === 'function' && isServerLoggedIn()) {
+                refreshServerModels();
+            }
+        });
+    }
+
+    const loginButton = document.getElementById('serverLoginButton');
+    if (loginButton) loginButton.addEventListener('click', serverLoginHandler);
+
+    const logoutButton = document.getElementById('serverLogoutButton');
+    if (logoutButton) logoutButton.addEventListener('click', serverLogoutHandler);
+
+    // 登录 / 注册 / 忘记密码 页签
+    const tabLogin = document.getElementById('serverTabLogin');
+    if (tabLogin) tabLogin.addEventListener('click', function() { showServerAuthTab('login'); });
+    const tabRegister = document.getElementById('serverTabRegister');
+    if (tabRegister) tabRegister.addEventListener('click', function() { showServerAuthTab('register'); });
+    const tabReset = document.getElementById('serverTabReset');
+    if (tabReset) tabReset.addEventListener('click', function() { showServerAuthTab('reset'); });
+
+    const sendCodeButton = document.getElementById('serverSendCodeButton');
+    if (sendCodeButton) sendCodeButton.addEventListener('click', serverSendCodeHandler);
+
+    const sendResetCodeButton = document.getElementById('serverSendResetCodeButton');
+    if (sendResetCodeButton) sendResetCodeButton.addEventListener('click', serverSendResetCodeHandler);
+
+    const registerButton = document.getElementById('serverRegisterButton');
+    if (registerButton) registerButton.addEventListener('click', serverRegisterHandler);
+
+    const resetButton = document.getElementById('serverResetButton');
+    if (resetButton) resetButton.addEventListener('click', serverResetHandler);
+
+    const refreshButton = document.getElementById('serverRefreshBalanceButton');
+    const checkinButton = document.getElementById('serverCheckinButton');
+    if (checkinButton) checkinButton.addEventListener('click', serverCheckinHandler);
+    const drawButton = document.getElementById('serverDrawButton');
+    if (drawButton) drawButton.addEventListener('click', serverDrawHandler);
+    if (refreshButton) refreshButton.addEventListener('click', refreshServerAccount);
+    const userCenterButton = document.getElementById('serverUserCenterButton');
+    if (userCenterButton) userCenterButton.addEventListener('click', openUserCenterHandler);
+
+    const redeemButton = document.getElementById('serverRedeemButton');
+    if (redeemButton) redeemButton.addEventListener('click', redeemCode);
+
+    const modelSelect = document.getElementById('serverModelSelect');
+    if (modelSelect) {
+        modelSelect.addEventListener('change', function() {
+            saveSelectedServerModelId(this.value);
+        });
+    }
+
+    // 打开设置弹窗时若已登录，顺手刷新账号信息（余额+抽奖）与模型
+    const modalEl = document.getElementById('settingsModal');
+    if (modalEl) {
+        modalEl.addEventListener('shown.bs.modal', function() {
+            if (typeof isServerLoggedIn === 'function' && isServerLoggedIn()) {
+                refreshServerAccount();
+                refreshServerModels();
+            }
+        });
     }
 }
 

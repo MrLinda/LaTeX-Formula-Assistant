@@ -44,8 +44,9 @@
             uploadCard: imageUpload && imageUpload.closest('.card'),
             latexLabel: document.querySelector('label[for="latexInput"]'),
             latexInput: latexInput,
-            // 原来那一行"公式预览 + ⛶ 按钮"整体当卡片标题用（网页版已是 card-header）
-            previewHeaderRow: openPreview && openPreview.parentElement,
+            // 原来那一行"公式预览 + ⛶ 按钮"整体当卡片标题用（网页版已是 card-header）。
+            // 用 closest 而不是 parentElement：标题行里可能还包了一层按钮容器。
+            previewHeaderRow: openPreview && openPreview.closest('.card-header'),
             formulaDisplay: formulaDisplay,
             copyRow: copyLatex && copyLatex.closest('.row'),
             tokensRow: tokenCount && tokenCount.closest('.mt-3'),

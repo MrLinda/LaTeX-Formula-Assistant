@@ -1,4 +1,4 @@
-# 构建桌面版并使用 Inno Setup 生成单文件安装包。
+﻿# 构建桌面版并使用 Inno Setup 生成单文件安装包。
 #
 # 用法（仓库根目录）：
 #     .\desktop\build-installer.ps1

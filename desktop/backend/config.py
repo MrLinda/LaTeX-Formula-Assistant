@@ -23,7 +23,7 @@ APP_TITLE = "LaTeX 公式助手"
 # 使 index.html 内的相对引用在网页版与桌面版行为一致。
 # desktop.css / desktop.js / desktop.html 不在此列：
 # 它们在服务 index 时被内联注入，不作为独立请求落到后端。
-FRONTEND_FILES = ("index.html", "config.js", "script.js", "styles.css")
+FRONTEND_FILES = ("index.html", "config.js", "service.js", "script.js", "styles.css")
 FRONTEND_DIRS = ("bootstrap", "temml")
 
 
