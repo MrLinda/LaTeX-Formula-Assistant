@@ -449,6 +449,30 @@ async function serviceRedeemCode(code) {
     return data;
 }
 
+// ---- 云端历史同步（{code, timestamp} 数组，服务端去重截断）----
+
+async function serviceGetSync() {
+    const resp = await serviceRequest('/api/v1/sync', { method: 'GET' });
+    await serverRequireOK(resp, '读取同步数据失败');
+    return resp.json().catch(() => ({}));
+}
+
+async function servicePutSync(history) {
+    const resp = await serviceRequest('/api/v1/sync', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': serverRequestID() },
+        body: JSON.stringify({ history: history })
+    });
+    await serverRequireOK(resp, '同步失败');
+    return resp.json().catch(() => ({}));
+}
+
+async function serviceDeleteSync() {
+    const resp = await serviceRequest('/api/v1/sync', { method: 'DELETE' });
+    await serverRequireOK(resp, '清除同步数据失败');
+    return resp.json().catch(() => ({}));
+}
+
 // ---- 公告（公开接口，失败静默返回空）----
 
 async function serviceFetchAnnouncements(limit) {
@@ -489,6 +513,9 @@ if (typeof module !== 'undefined' && module.exports) {
         serviceRedeemCode,
         serviceCheckIn,
         serviceDrawLottery,
+        serviceGetSync,
+        servicePutSync,
+        serviceDeleteSync,
         serviceFetchAnnouncements,
         getServerUser,
         getServerAccount,
@@ -517,6 +544,9 @@ if (typeof module !== 'undefined' && module.exports) {
     window.serviceRedeemCode = serviceRedeemCode;
     window.serviceCheckIn = serviceCheckIn;
     window.serviceDrawLottery = serviceDrawLottery;
+    window.serviceGetSync = serviceGetSync;
+    window.servicePutSync = servicePutSync;
+    window.serviceDeleteSync = serviceDeleteSync;
     window.serviceFetchAnnouncements = serviceFetchAnnouncements;
     window.getServerUser = getServerUser;
     window.getServerAccount = getServerAccount;

@@ -95,6 +95,7 @@ document.addEventListener('DOMContentLoaded', function() {
             refreshServerModels();
             // 缓存的用户对象可能是老数据（没有抽奖次数字段），恢复会话时拉一次完整账号信息
             refreshServerAccount();
+            syncHistoryPullAndMerge();
         });
     }
     loadAnnouncements();
@@ -271,9 +272,10 @@ function saveToHistory(latexCode) {
         
         // 保存到本地存储
         localStorage.setItem('latexHistory', JSON.stringify(historyList));
-        
+
         // 更新历史记录UI
         updateHistoryUI();
+        scheduleHistorySyncPush();
     }
 }
 
@@ -1075,6 +1077,7 @@ async function serverLoginHandler() {
         await refreshServerModels();
         // 登录响应不带 lottery_chances，拉一次账号信息补上，次数标签才不是「-」
         refreshServerAccount();
+        if (historySyncEnabled()) syncHistoryPullAndMerge();
         showToast('登录成功');
     } catch (error) {
         showAlert('登录失败：' + (error.message || error));
@@ -1115,6 +1118,108 @@ async function openUserCenterHandler() {
         }
     }
     window.open(url, '_blank', 'noopener');
+}
+
+// ---- 云端历史同步（v1）----
+// 默认关闭、按设备各自开关（localStorage）。开启后：登录/启动时拉云端并与本地
+// 按条目去重合并（时间倒序、截上限），复制新公式时防抖推送全量。关闭只停止
+// 本设备的拉/推，不动云端数据（清除入口在用户中心）。云端 API 密钥等敏感
+// 配置不参与同步。
+
+const HISTORY_SYNC_KEY = 'historySyncEnabled';
+let historySyncCap = 20;
+let historySyncBusy = false;
+let historySyncPushTimer = null;
+
+function historySyncEnabled() {
+    try { return localStorage.getItem(HISTORY_SYNC_KEY) === 'true'; } catch (_) { return false; }
+}
+
+function renderHistorySyncToggle() {
+    const toggle = document.getElementById('history-sync-toggle');
+    if (toggle) toggle.checked = historySyncEnabled();
+}
+
+function mergeHistories(local, remote, cap) {
+    const seen = new Set();
+    const merged = [];
+    for (const item of [...(remote || []), ...(local || [])]) {
+        if (!item || typeof item.code !== 'string' || !item.code || seen.has(item.code)) continue;
+        seen.add(item.code);
+        merged.push({ code: item.code, timestamp: item.timestamp || '' });
+    }
+    // 远端在前只是保证远端条目优先占位；最终顺序按时间倒序
+    merged.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+    return merged.slice(0, cap);
+}
+
+function applyHistoryList(list) {
+    historyList = list;
+    try { localStorage.setItem('latexHistory', JSON.stringify(historyList)); } catch (_) { /* 存不上不影响本次使用 */ }
+    updateHistoryUI();
+}
+
+async function syncHistoryPullAndMerge() {
+    if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) return;
+    if (!historySyncEnabled() || historySyncBusy) return;
+    if (typeof serviceGetSync !== 'function') return;
+    historySyncBusy = true;
+    try {
+        const data = await serviceGetSync();
+        const cap = Number(data.max_entries) || MAX_HISTORY_ITEMS;
+        historySyncCap = cap;
+        const merged = mergeHistories(historyList, data.history || [], cap);
+        const before = JSON.stringify(historyList.slice(0, cap));
+        const after = JSON.stringify(merged);
+        if (after !== before) applyHistoryList(merged);
+        // 无条件回推一次，让云端收敛到合并结果（幂等，服务端会再去重截断）
+        if (typeof servicePutSync === 'function') {
+            const put = await servicePutSync(merged);
+            historySyncCap = Number(put.max_entries) || cap;
+        }
+    } catch (_) {
+        // 同步失败静默：下次登录/复制时会再试
+    } finally {
+        historySyncBusy = false;
+    }
+}
+
+function scheduleHistorySyncPush() {
+    if (!historySyncEnabled()) return;
+    if (historySyncPushTimer) clearTimeout(historySyncPushTimer);
+    // 防抖 3 秒：连续复制多条只推一次
+    historySyncPushTimer = setTimeout(async () => {
+        historySyncPushTimer = null;
+        if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) return;
+        if (!historySyncEnabled() || historySyncBusy) return;
+        historySyncBusy = true;
+        try {
+            if (typeof servicePutSync === 'function') {
+                await servicePutSync(historyList.slice(0, historySyncCap));
+            }
+        } catch (_) {
+            // 推送失败静默，下次变更再试
+        } finally {
+            historySyncBusy = false;
+        }
+    }, 3000);
+}
+
+async function historySyncToggleHandler() {
+    const toggle = document.getElementById('history-sync-toggle');
+    if (!toggle) return;
+    if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) {
+        toggle.checked = false;
+        return showAlert('请先登录服务端账号');
+    }
+    try { localStorage.setItem(HISTORY_SYNC_KEY, toggle.checked ? 'true' : 'false'); } catch (_) { /* 忽略 */ }
+    if (toggle.checked) {
+        showToast('已开启多设备同步');
+        await syncHistoryPullAndMerge();
+    } else {
+        if (historySyncPushTimer) { clearTimeout(historySyncPushTimer); historySyncPushTimer = null; }
+        showToast('已关闭本设备的同步（云端数据未删除，可在用户中心清除）');
+    }
 }
 
 // ---- 登录 / 注册 / 忘记密码 三个页签 ----
@@ -1451,6 +1556,11 @@ function initServerSettingsUI() {
     if (refreshButton) refreshButton.addEventListener('click', refreshServerAccount);
     const userCenterButton = document.getElementById('serverUserCenterButton');
     if (userCenterButton) userCenterButton.addEventListener('click', openUserCenterHandler);
+    const historySyncToggle = document.getElementById('history-sync-toggle');
+    if (historySyncToggle) {
+        historySyncToggle.addEventListener('change', historySyncToggleHandler);
+        renderHistorySyncToggle();
+    }
 
     const redeemButton = document.getElementById('serverRedeemButton');
     if (redeemButton) redeemButton.addEventListener('click', redeemCode);
