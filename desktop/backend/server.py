@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
+import threading
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,7 @@ from backend.config import (
     FRONTEND_FILES,
     desktop_assets_dir,
     models_dir,
+    state_file,
     web_root,
 )
 
@@ -122,12 +125,55 @@ async def index(request: Request) -> Response:
         html,
         flags=re.IGNORECASE,
     )
-    html = html.replace("<head>", f"<head>\n    {meta}", 1)
+    # 持久化状态：桌面端 UI 状态存本地文件（data/ui-state.json），启动时
+    # 注入 window.PERSISTED_STATE，前端存储适配层读内存、写入防抖 PUT 落盘。
+    # </ 转义防止提前闭合 script 标签。
+    state_js = json.dumps(_read_ui_state(), ensure_ascii=False).replace("</", "<\\/")
+    boot = f"<script>window.PERSISTED_STATE = {state_js};</script>"
+    html = html.replace("<head>", f"<head>\n    {meta}\n    {boot}", 1)
 
     # 注入桌面版布局（样式 + 外壳标记 + 外壳逻辑）
     html = _inject_desktop_shell(html)
 
     return HTMLResponse(content=html)
+
+
+# ---------- UI 状态持久化（桌面端代替 localStorage） ----------
+
+_ui_state_lock = threading.Lock()
+_UI_STATE_MAX_BYTES = 1_000_000
+
+
+def _read_ui_state() -> dict[str, Any]:
+    try:
+        data = json.loads(state_file().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+class UiStatePayload(BaseModel):
+    state: dict[str, Any]
+
+
+@app.get("/api/state")
+async def get_ui_state() -> JSONResponse:
+    with _ui_state_lock:
+        return JSONResponse({"state": _read_ui_state()})
+
+
+@app.put("/api/state")
+async def put_ui_state(payload: UiStatePayload) -> JSONResponse:
+    """客户端全量回写 UI 状态（内存写完防抖落盘，last write wins）。"""
+    raw = json.dumps(payload.state, ensure_ascii=False)
+    if len(raw.encode("utf-8")) > _UI_STATE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="状态数据超过 1MB 上限")
+    with _ui_state_lock:
+        path = state_file()
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(raw, encoding="utf-8")
+        tmp.replace(path)
+    return JSONResponse({"ok": True})
 
 
 # 顶层前端脚本/样式

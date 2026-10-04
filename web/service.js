@@ -37,26 +37,26 @@ class ServerAPIError extends Error {
 // ---- 存储小工具（localStorage 不可用时全部降级为无操作）----
 
 function serverStorageGet(key) {
-    try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
+    try { return uiStorageGet(key) || ''; } catch (_) { return ''; }
 }
 
 function serverStorageSet(key, value) {
-    try { localStorage.setItem(key, value); } catch (_) { /* 忽略 */ }
+    try { uiStorageSet(key, value); } catch (_) { /* 忽略 */ }
 }
 
 function serverStorageRemove(key) {
-    try { localStorage.removeItem(key); } catch (_) { /* 忽略 */ }
+    try { uiStorageRemove(key); } catch (_) { /* 忽略 */ }
 }
 
 function serverStorageGetJSON(key) {
     try {
-        const raw = localStorage.getItem(key);
+        const raw = uiStorageGet(key);
         return raw ? JSON.parse(raw) : null;
     } catch (_) { return null; }
 }
 
 function serverStorageSetJSON(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* 忽略 */ }
+    try { uiStorageSet(key, JSON.stringify(value)); } catch (_) { /* 忽略 */ }
 }
 
 // ---- 地址与会话 ----

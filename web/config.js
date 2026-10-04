@@ -13,6 +13,60 @@
 // 与上面的 OpenAI chat/completions 协议不同，因此单独配置、单独封装（见 service.js）。
 
 // === 云端提供商注册表（key = 提供商 id） ===
+
+// ---- 持久化存储适配层（必须在任何 localStorage 使用之前定义）----
+// 桌面版（window.LOCAL_API_BASE 存在）：本地后端把 data/ui-state.json 注入
+// window.PERSISTED_STATE，读内存、写内存 + 防抖 PUT /api/state 落盘——
+// 摆脱 localStorage 按 origin（含每次启动的随机端口）隔离导致的重启丢数据。
+// 网页版：没有 LOCAL_API_BASE，照旧 localStorage。
+const _uiPersisted = (function () {
+    if (typeof window === 'undefined' || !window.LOCAL_API_BASE) return null;
+    const injected = window.PERSISTED_STATE;
+    return (injected && typeof injected === 'object' && !Array.isArray(injected)) ? injected : {};
+})();
+let _uiPersistTimer = null;
+
+function uiStorageGet(key) {
+    if (_uiPersisted) {
+        const v = _uiPersisted[key];
+        return typeof v === 'string' ? v : '';
+    }
+    try { return uiStorageGet(key) || ''; } catch (_) { return ''; }
+}
+
+function uiStorageSet(key, value) {
+    if (_uiPersisted) {
+        _uiPersisted[key] = String(value);
+        scheduleUiStatePersist();
+        return;
+    }
+    try { uiStorageSet(key, value); } catch (_) { /* 存不上不影响本次使用 */ }
+}
+
+function uiStorageRemove(key) {
+    if (_uiPersisted) {
+        delete _uiPersisted[key];
+        scheduleUiStatePersist();
+        return;
+    }
+    try { uiStorageRemove(key); } catch (_) { /* 忽略 */ }
+}
+
+function scheduleUiStatePersist() {
+    if (!_uiPersisted) return;
+    if (_uiPersistTimer) clearTimeout(_uiPersistTimer);
+    _uiPersistTimer = setTimeout(function () {
+        _uiPersistTimer = null;
+        try {
+            fetch(window.LOCAL_API_BASE + '/api/state', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ state: _uiPersisted })
+            }).catch(function () { /* 落盘失败下次写入再试 */ });
+        } catch (_) { /* 忽略 */ }
+    }, 800);
+}
+
 const providerConfig = {
     siliconflow: {
         name: "硅基流动",
@@ -79,24 +133,24 @@ function apiKeyStorageKey(providerId) {
 //   - 全新用户：桌面版默认本地（与旧版下拉首项一致），网页版默认云端
 function migrateSettings() {
     try {
-        const oldKey = localStorage.getItem('apiKey');
-        if (oldKey && !localStorage.getItem('apiKey_siliconflow')) {
-            localStorage.setItem('apiKey_siliconflow', oldKey);
+        const oldKey = uiStorageGet('apiKey');
+        if (oldKey && !uiStorageGet('apiKey_siliconflow')) {
+            uiStorageSet('apiKey_siliconflow', oldKey);
         }
 
-        const savedModel = localStorage.getItem('selectedModel');
-        if (savedModel && !localStorage.getItem('recognizeMode')) {
+        const savedModel = uiStorageGet('selectedModel');
+        if (savedModel && !uiStorageGet('recognizeMode')) {
             if (localModelConfig[savedModel]) {
-                localStorage.setItem('selectedLocalModel', savedModel);
-                localStorage.removeItem('selectedModel');
-                localStorage.setItem('recognizeMode', 'local');
+                uiStorageSet('selectedLocalModel', savedModel);
+                uiStorageRemove('selectedModel');
+                uiStorageSet('recognizeMode', 'local');
             } else {
-                localStorage.setItem('recognizeMode', 'cloud');
+                uiStorageSet('recognizeMode', 'cloud');
             }
         }
 
-        if (!localStorage.getItem('recognizeMode')) {
-            localStorage.setItem('recognizeMode', isDesktopEnv() ? 'local' : 'cloud');
+        if (!uiStorageGet('recognizeMode')) {
+            uiStorageSet('recognizeMode', isDesktopEnv() ? 'local' : 'cloud');
         }
     } catch (_) {
         // localStorage 不可用（隐私模式等）：按默认值继续，不影响主流程
@@ -105,7 +159,7 @@ function migrateSettings() {
 
 function getRecognizeMode() {
     let saved = null;
-    try { saved = localStorage.getItem('recognizeMode'); } catch (_) { /* 读不到走默认 */ }
+    try { saved = uiStorageGet('recognizeMode'); } catch (_) { /* 读不到走默认 */ }
     if (saved === 'server') return 'server';
     // local 只在桌面版成立，网页版退回云端
     if (saved === 'local') return isDesktopEnv() ? 'local' : 'cloud';
@@ -115,28 +169,28 @@ function getRecognizeMode() {
 function setRecognizeMode(mode) {
     const value = (mode === 'local' || mode === 'server') ? mode : 'cloud';
     try {
-        localStorage.setItem('recognizeMode', value);
+        uiStorageSet('recognizeMode', value);
     } catch (_) { /* 存不上不影响本次使用 */ }
 }
 
 // 服务端地址：localStorage 里的值优先，其次 config.js 的默认值；统一去掉末尾斜杠
 function getServerBaseUrl() {
     let saved = '';
-    try { saved = localStorage.getItem('serverBaseUrl') || ''; } catch (_) { /* 走默认 */ }
+    try { saved = uiStorageGet('serverBaseUrl') || ''; } catch (_) { /* 走默认 */ }
     const base = (saved || (typeof serverConfig !== 'undefined' ? serverConfig.baseUrl : '') || '').trim();
     return base.replace(/\/+$/, '');
 }
 
 function setServerBaseUrl(url) {
     const value = (url || '').trim().replace(/\/+$/, '');
-    try { localStorage.setItem('serverBaseUrl', value); } catch (_) { /* 忽略 */ }
+    try { uiStorageSet('serverBaseUrl', value); } catch (_) { /* 忽略 */ }
     return value;
 }
 
 // 当前提供商：存的 id 不在注册表里（比如以后被删掉）就退回第一个
 function getSelectedProviderId() {
     let id = '';
-    try { id = localStorage.getItem('selectedProvider') || ''; } catch (_) { /* 走默认 */ }
+    try { id = uiStorageGet('selectedProvider') || ''; } catch (_) { /* 走默认 */ }
     if (!providerConfig[id]) {
         id = Object.keys(providerConfig)[0];
     }
@@ -144,7 +198,7 @@ function getSelectedProviderId() {
 }
 
 function saveSelectedProvider(providerId) {
-    try { localStorage.setItem('selectedProvider', providerId); } catch (_) { /* 忽略 */ }
+    try { uiStorageSet('selectedProvider', providerId); } catch (_) { /* 忽略 */ }
 }
 
 function getSelectedProvider() {
@@ -212,7 +266,7 @@ function generateLocalModelOptions() {
     }
 
     let saved = '';
-    try { saved = localStorage.getItem('selectedLocalModel') || ''; } catch (_) { /* 走默认 */ }
+    try { saved = uiStorageGet('selectedLocalModel') || ''; } catch (_) { /* 走默认 */ }
     if (saved && localModelConfig[saved]) {
         select.value = saved;
     }
@@ -222,11 +276,11 @@ function generateLocalModelOptions() {
 function saveSelectedModel(modelKey) {
     try {
         if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('selectedModel', modelKey);
+            uiStorageSet('selectedModel', modelKey);
             // 如果是自定义模型，同时保存自定义模型名
             if (modelKey === 'custom') {
                 const customInput = document.getElementById('customModelInput');
-                localStorage.setItem('customModelName', customInput ? customInput.value.trim() : '');
+                uiStorageSet('customModelName', customInput ? customInput.value.trim() : '');
             }
         }
     } catch (e) {
@@ -242,14 +296,14 @@ function loadSelectedModel() {
     const modelSelect = document.getElementById('modelSelect');
     if (!modelSelect) return;
 
-    const savedModel = localStorage.getItem('selectedModel');
+    const savedModel = uiStorageGet('selectedModel');
     const provider = getSelectedProvider();
     const models = provider ? provider.models : {};
 
     if (savedModel === 'custom') {
         modelSelect.value = 'custom';
         const customInput = document.getElementById('customModelInput');
-        const savedCustomName = localStorage.getItem('customModelName');
+        const savedCustomName = uiStorageGet('customModelName');
         if (customInput && savedCustomName) {
             customInput.value = savedCustomName;
         }

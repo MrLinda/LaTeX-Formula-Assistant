@@ -69,6 +69,27 @@ def app_dir() -> Path:
     return repo_root()
 
 
+def state_file() -> Path:
+    """UI 持久化状态文件（登录令牌、公式历史、设置）。
+
+    便携版放 exe 同级 ``data/ui-state.json``，跟应用走、天然可备份；
+    目录不可写（如装进只读位置）时退回 ``%APPDATA%\\LaTeXFormulaAssistant``。
+    """
+    base = app_dir() / "data"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+        probe = base / ".write-probe"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+        return base / "ui-state.json"
+    except OSError:
+        import os
+
+        fallback = Path(os.environ.get("APPDATA", str(Path.home()))) / "LaTeXFormulaAssistant"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback / "ui-state.json"
+
+
 def models_dir() -> Path:
     """本地模型存放目录（应用目录下的 models/），首次访问时自动创建。"""
     d = app_dir() / "models"

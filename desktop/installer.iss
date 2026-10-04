@@ -2,7 +2,7 @@
 #define MyAppExeName "LaTeX-Formula-Assistant.exe"
 #define MyAppPublisher "MrLinda"
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.3.1"
 #endif
 
 [Setup]

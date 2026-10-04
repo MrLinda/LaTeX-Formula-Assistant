@@ -158,7 +158,7 @@
 
         var collapsed = false;
         try {
-            collapsed = localStorage.getItem(SIDEBAR_STATE_KEY) === '1';
+            collapsed = uiStorageGet(SIDEBAR_STATE_KEY) === '1';
         } catch (_) { /* 读不到就用默认展开 */ }
 
         applySidebarState(sidebar, toggleButton, collapsed);
@@ -167,7 +167,7 @@
             var next = !sidebar.classList.contains('collapsed');
             applySidebarState(sidebar, toggleButton, next);
             try {
-                localStorage.setItem(SIDEBAR_STATE_KEY, next ? '1' : '0');
+                uiStorageSet(SIDEBAR_STATE_KEY, next ? '1' : '0');
             } catch (_) { /* 写不进去也不影响本次使用 */ }
         });
     }

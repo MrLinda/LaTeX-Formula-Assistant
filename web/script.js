@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // 清空历史记录
         historyList = [];
-        localStorage.removeItem('latexHistory');
+        uiStorageRemove('latexHistory');
         updateHistoryUI();
         showToast('历史记录已清空');
     });
@@ -156,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const localModelSelect = document.getElementById('localModelSelect');
     if (localModelSelect) {
         localModelSelect.addEventListener('change', function() {
-            try { localStorage.setItem('selectedLocalModel', this.value); } catch (_) { /* 存不上不影响本次使用 */ }
+            try { uiStorageSet('selectedLocalModel', this.value); } catch (_) { /* 存不上不影响本次使用 */ }
         });
     }
 
@@ -204,7 +204,7 @@ const THEME_META = {
 
 function getThemeMode() {
     try {
-        const mode = localStorage.getItem(THEME_KEY);
+        const mode = uiStorageGet(THEME_KEY);
         if (THEME_ORDER.includes(mode)) return mode;
     } catch (_) { /* 存储不可用则退回自动 */ }
     return 'auto';
@@ -235,7 +235,7 @@ function initThemeToggle() {
     if (btn) {
         btn.addEventListener('click', function() {
             const next = THEME_ORDER[(THEME_ORDER.indexOf(getThemeMode()) + 1) % THEME_ORDER.length];
-            try { localStorage.setItem(THEME_KEY, next); } catch (_) { /* 存不上仍可切换本次 */ }
+            try { uiStorageSet(THEME_KEY, next); } catch (_) { /* 存不上仍可切换本次 */ }
             applyTheme();
         });
     }
@@ -271,7 +271,7 @@ function saveToHistory(latexCode) {
         }
         
         // 保存到本地存储
-        localStorage.setItem('latexHistory', JSON.stringify(historyList));
+        uiStorageSet('latexHistory', JSON.stringify(historyList));
 
         // 更新历史记录UI
         updateHistoryUI();
@@ -281,7 +281,7 @@ function saveToHistory(latexCode) {
 
 // 从本地存储加载历史记录
 function loadHistory() {
-    const savedHistory = localStorage.getItem('latexHistory');
+    const savedHistory = uiStorageGet('latexHistory');
     if (savedHistory) {
         try {
             historyList = JSON.parse(savedHistory);
@@ -302,7 +302,7 @@ function saveApiKey() {
     const apiKey = apiKeyInput.value.trim();
 
     if (apiKey) {
-        localStorage.setItem(apiKeyStorageKey(getSelectedProviderId()), apiKey);
+        uiStorageSet(apiKeyStorageKey(getSelectedProviderId()), apiKey);
         showAlert('API密钥已保存！');
     } else {
         showAlert('请输入有效的API密钥');
@@ -312,7 +312,7 @@ function saveApiKey() {
 // 加载API密钥（初始化与切换提供商时都调用，载入当前提供商的密钥）
 function loadApiKey() {
     const apiKeyInput = document.getElementById('apiKeyInput');
-    const savedApiKey = localStorage.getItem(apiKeyStorageKey(getSelectedProviderId()));
+    const savedApiKey = uiStorageGet(apiKeyStorageKey(getSelectedProviderId()));
 
     apiKeyInput.value = savedApiKey || '';
 }
@@ -1077,7 +1077,7 @@ async function serverLoginHandler() {
         await refreshServerModels();
         // 登录响应不带 lottery_chances，拉一次账号信息补上，次数标签才不是「-」
         refreshServerAccount();
-        if (historySyncEnabled()) syncHistoryPullAndMerge();
+        syncHistoryPullAndMerge(); // 拉取云端历史（上传是否授权看勾选）
         showToast('登录成功');
     } catch (error) {
         showAlert('登录失败：' + (error.message || error));
@@ -1120,24 +1120,25 @@ async function openUserCenterHandler() {
     window.open(url, '_blank', 'noopener');
 }
 
-// ---- 云端历史同步（v1）----
-// 默认关闭、按设备各自开关（localStorage）。开启后：登录/启动时拉云端并与本地
-// 按条目去重合并（时间倒序、截上限），复制新公式时防抖推送全量。关闭只停止
-// 本设备的拉/推，不动云端数据（清除入口在用户中心）。云端 API 密钥等敏感
-// 配置不参与同步。
+// ---- 云端历史同步（v1.1：拉取默认、上传需勾选）----
+// 方向不对称处理：下载是低风险方向（自己账号的数据进自己登录的设备），
+// 登录/启动/勾选上传时自动拉取云端并与本地按条目去重合并（时间倒序、截上限）；
+// 上传是敏感方向（本机内容外发），默认关闭、按设备勾选（uiStorage 持久化），
+// 复制新公式时防抖推送全量。关闭上传只停止推送，云端数据不动（清除入口在
+// 用户中心）。云端 API 密钥等敏感配置不参与同步。
 
-const HISTORY_SYNC_KEY = 'historySyncEnabled';
+const HISTORY_SYNC_KEY = 'historySyncEnabled'; // 语义：是否允许上传（沿用旧键，兼容已勾选用户）
 let historySyncCap = 20;
 let historySyncBusy = false;
 let historySyncPushTimer = null;
 
-function historySyncEnabled() {
-    try { return localStorage.getItem(HISTORY_SYNC_KEY) === 'true'; } catch (_) { return false; }
+function historyUploadEnabled() {
+    try { return uiStorageGet(HISTORY_SYNC_KEY) === 'true'; } catch (_) { return false; }
 }
 
 function renderHistorySyncToggle() {
     const toggle = document.getElementById('history-sync-toggle');
-    if (toggle) toggle.checked = historySyncEnabled();
+    if (toggle) toggle.checked = historyUploadEnabled();
 }
 
 function mergeHistories(local, remote, cap) {
@@ -1155,13 +1156,13 @@ function mergeHistories(local, remote, cap) {
 
 function applyHistoryList(list) {
     historyList = list;
-    try { localStorage.setItem('latexHistory', JSON.stringify(historyList)); } catch (_) { /* 存不上不影响本次使用 */ }
+    try { uiStorageSet('latexHistory', JSON.stringify(historyList)); } catch (_) { /* 存不上不影响本次使用 */ }
     updateHistoryUI();
 }
 
 async function syncHistoryPullAndMerge() {
     if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) return;
-    if (!historySyncEnabled() || historySyncBusy) return;
+    if (historySyncBusy) return;
     if (typeof serviceGetSync !== 'function') return;
     historySyncBusy = true;
     try {
@@ -1172,8 +1173,8 @@ async function syncHistoryPullAndMerge() {
         const before = JSON.stringify(historyList.slice(0, cap));
         const after = JSON.stringify(merged);
         if (after !== before) applyHistoryList(merged);
-        // 无条件回推一次，让云端收敛到合并结果（幂等，服务端会再去重截断）
-        if (typeof servicePutSync === 'function') {
+        // 仅在已授权上传时回推一次，让云端收敛到合并结果（幂等，服务端会再去重截断）
+        if (historyUploadEnabled() && typeof servicePutSync === 'function') {
             const put = await servicePutSync(merged);
             historySyncCap = Number(put.max_entries) || cap;
         }
@@ -1185,13 +1186,13 @@ async function syncHistoryPullAndMerge() {
 }
 
 function scheduleHistorySyncPush() {
-    if (!historySyncEnabled()) return;
+    if (!historyUploadEnabled()) return;
     if (historySyncPushTimer) clearTimeout(historySyncPushTimer);
     // 防抖 3 秒：连续复制多条只推一次
     historySyncPushTimer = setTimeout(async () => {
         historySyncPushTimer = null;
         if (typeof isServerLoggedIn !== 'function' || !isServerLoggedIn()) return;
-        if (!historySyncEnabled() || historySyncBusy) return;
+        if (!historyUploadEnabled() || historySyncBusy) return;
         historySyncBusy = true;
         try {
             if (typeof servicePutSync === 'function') {
@@ -1212,13 +1213,13 @@ async function historySyncToggleHandler() {
         toggle.checked = false;
         return showAlert('请先登录服务端账号');
     }
-    try { localStorage.setItem(HISTORY_SYNC_KEY, toggle.checked ? 'true' : 'false'); } catch (_) { /* 忽略 */ }
+    try { uiStorageSet(HISTORY_SYNC_KEY, toggle.checked ? 'true' : 'false'); } catch (_) { /* 忽略 */ }
     if (toggle.checked) {
-        showToast('已开启多设备同步');
-        await syncHistoryPullAndMerge();
+        showToast('已开启上传：本设备历史将同步到云端');
+        await syncHistoryPullAndMerge(); // 拉取合并 + 授权后的回推
     } else {
         if (historySyncPushTimer) { clearTimeout(historySyncPushTimer); historySyncPushTimer = null; }
-        showToast('已关闭本设备的同步（云端数据未删除，可在用户中心清除）');
+        showToast('已关闭上传（云端已有的数据不受影响，可在用户中心清除）');
     }
 }
 
@@ -1524,6 +1525,17 @@ function initServerSettingsUI() {
 
     const loginButton = document.getElementById('serverLoginButton');
     if (loginButton) loginButton.addEventListener('click', serverLoginHandler);
+    // 登录面板里按回车触发登录（输入框不是 form，原生不会提交）
+    const loginAccountInput = document.getElementById('serverAccountInput');
+    const loginPasswordInput = document.getElementById('serverPasswordInput');
+    const onLoginEnter = function (event) {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        if (loginButton && loginButton.disabled) return; // 正在登录中，防重复提交
+        serverLoginHandler();
+    };
+    if (loginAccountInput) loginAccountInput.addEventListener('keydown', onLoginEnter);
+    if (loginPasswordInput) loginPasswordInput.addEventListener('keydown', onLoginEnter);
 
     const logoutButton = document.getElementById('serverLogoutButton');
     if (logoutButton) logoutButton.addEventListener('click', serverLogoutHandler);
@@ -1592,12 +1604,12 @@ const FORMULA_FONT_MIN = 12;
 const FORMULA_FONT_MAX = 96; // 需与 index.html 里滑块的 min/max 保持一致
 
 function getFormulaFontSize() {
-    const saved = parseInt(localStorage.getItem(FORMULA_FONT_KEY), 10);
+    const saved = parseInt(uiStorageGet(FORMULA_FONT_KEY), 10);
     return Number.isFinite(saved) ? saved : FORMULA_FONT_DEFAULT;
 }
 
 function isFormulaAutoFit() {
-    const saved = localStorage.getItem(FORMULA_AUTOFIT_KEY);
+    const saved = uiStorageGet(FORMULA_AUTOFIT_KEY);
     return saved === null ? true : saved === 'true';
 }
 
@@ -1671,12 +1683,12 @@ function initFormulaFontSizeSettings() {
     autoFit.checked = isFormulaAutoFit();
 
     slider.addEventListener('input', function() {
-        localStorage.setItem(FORMULA_FONT_KEY, this.value);
+        uiStorageSet(FORMULA_FONT_KEY, this.value);
         applyFormulaFontSize();
     });
 
     autoFit.addEventListener('change', function() {
-        localStorage.setItem(FORMULA_AUTOFIT_KEY, this.checked ? 'true' : 'false');
+        uiStorageSet(FORMULA_AUTOFIT_KEY, this.checked ? 'true' : 'false');
         // 关闭自适应时 applyFormulaFontSize 会把滑块还原成用户设定的字号
         applyFormulaFontSize();
     });
@@ -1907,7 +1919,7 @@ function updateHistoryUI() {
 // 从历史记录中删除项
 function deleteHistoryItem(index) {
     historyList.splice(index, 1);
-    localStorage.setItem('latexHistory', JSON.stringify(historyList));
+    uiStorageSet('latexHistory', JSON.stringify(historyList));
     updateHistoryUI();
 }
 
