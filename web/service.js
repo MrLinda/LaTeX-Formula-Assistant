@@ -1,7 +1,8 @@
 // 私有服务端（LaTeX Formula Assistant Server）API 客户端
 //
 // 负责：会话与令牌、模型列表、识别、反馈、账号信息、兑换码、公告。
-// 桌面版与网页版走同一条「直连服务端」路径，令牌统一存 localStorage。
+// 桌面版与网页版走同一条「直连服务端」路径，令牌经 config.js 的 uiStorage 适配层
+// 存取（桌面版落 data/ui-state.json，网页版落 localStorage）。
 //
 // 约定：
 // - 服务端地址来自 config.js 的 getServerBaseUrl()（localStorage 覆盖 serverConfig.baseUrl）。
@@ -220,7 +221,8 @@ async function serviceLogin(identifier, password) {
             body: JSON.stringify({
                 email: identifier,
                 password: password,
-                device_name: 'LaTeX公式助手'
+                // 网页版/桌面版分开标注，服务端设备列表才能区分登录来源
+                device_name: isDesktopEnv() ? 'LaTeX公式助手·桌面版' : 'LaTeX公式助手·网页版'
             })
         });
     } catch (_) {

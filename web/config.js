@@ -31,7 +31,7 @@ function uiStorageGet(key) {
         const v = _uiPersisted[key];
         return typeof v === 'string' ? v : '';
     }
-    try { return uiStorageGet(key) || ''; } catch (_) { return ''; }
+    try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
 }
 
 function uiStorageSet(key, value) {
@@ -40,7 +40,7 @@ function uiStorageSet(key, value) {
         scheduleUiStatePersist();
         return;
     }
-    try { uiStorageSet(key, value); } catch (_) { /* 存不上不影响本次使用 */ }
+    try { localStorage.setItem(key, value); } catch (_) { /* 存不上不影响本次使用 */ }
 }
 
 function uiStorageRemove(key) {
@@ -49,7 +49,7 @@ function uiStorageRemove(key) {
         scheduleUiStatePersist();
         return;
     }
-    try { uiStorageRemove(key); } catch (_) { /* 忽略 */ }
+    try { localStorage.removeItem(key); } catch (_) { /* 忽略 */ }
 }
 
 function scheduleUiStatePersist() {
