@@ -88,6 +88,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const feedbackSubmitButton = document.getElementById('feedbackSubmitButton');
     if (feedbackSubmitButton) feedbackSubmitButton.addEventListener('click', submitBadFeedback);
 
+    // 会话被服务端单方面作废（设备被下线、会话过期）时切回未登录态：
+    // 否则界面停留在"假登录"，账号信息还在但所有请求都被 401 拒绝
+    if (typeof setOnSessionInvalidated === 'function') {
+        setOnSessionInvalidated(function () {
+            renderServerAuthState();
+            if (typeof showToast === 'function') showToast('登录已失效，请重新登录');
+        });
+    }
+
     // 已登录服务端账号时静默恢复会话（必要时刷新 access），并拉模型与公告
     if (typeof isServerLoggedIn === 'function' && isServerLoggedIn()) {
         serviceEnsureAccessToken(false).then(function() {

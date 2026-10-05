@@ -140,13 +140,15 @@ async function serviceEnsureAccessToken(force) {
         return '';
     }
     if (!resp.ok) {
-        // 刷新令牌失效：清掉本地会话，让用户重新登录
+        // 刷新令牌失效（被下线/过期）：清掉本地会话并通知 UI 切回未登录态
         clearServerSession();
+        notifySessionInvalidated();
         return '';
     }
     const data = await resp.json().catch(() => null);
     if (!data || !data.access_token) {
         clearServerSession();
+        notifySessionInvalidated();
         return '';
     }
     applyTokenResponse(data);
@@ -496,6 +498,22 @@ async function serviceFetchAnnouncements(limit) {
 
 restoreServerSession();
 
+// ---- 会话被作废的 UI 钩子 ----
+// 设备被下线或会话过期时，refresh 会失败、本地令牌被清，但调用方只知道
+// 单次请求出错；由 script.js 注册此钩子把界面切回未登录态并提示，
+// 避免停留在"看着已登录、什么都操作不了"的假状态。
+
+let onSessionInvalidated = null;
+
+function setOnSessionInvalidated(fn) {
+    onSessionInvalidated = typeof fn === 'function' ? fn : null;
+}
+
+function notifySessionInvalidated() {
+    if (!onSessionInvalidated) return;
+    try { onSessionInvalidated(); } catch (_) { /* UI 回调失败不影响令牌清理 */ }
+}
+
 // ---- 导出 ----
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -527,7 +545,8 @@ if (typeof module !== 'undefined' && module.exports) {
         saveSelectedServerModelId,
         serverBase64ToBlob,
         clearServerSession,
-        restoreServerSession
+        restoreServerSession,
+        setOnSessionInvalidated
     };
 } else if (typeof window !== 'undefined') {
     window.ServerAPIError = ServerAPIError;
@@ -559,4 +578,5 @@ if (typeof module !== 'undefined' && module.exports) {
     window.serverBase64ToBlob = serverBase64ToBlob;
     window.clearServerSession = clearServerSession;
     window.restoreServerSession = restoreServerSession;
+    window.setOnSessionInvalidated = setOnSessionInvalidated;
 }
