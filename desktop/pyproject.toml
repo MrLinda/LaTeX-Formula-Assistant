@@ -1,6 +1,6 @@
 [project]
 name = "latex-formula-assistant"
-version = "0.3.1"
+version = "0.3.2"
 description = "LaTeX 公式识别助手 - 桌面版（PyWebView + 本地 ONNX 模型 + 云端 API）"
 requires-python = ">=3.10,<3.13"
 authors = [{ name = "MrLinda" }]
