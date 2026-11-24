@@ -102,7 +102,7 @@ function applyTokenResponse(data) {
 
 function clearServerSession() {
     serverSession = { accessToken: '', expiresAt: 0 };
-    [SERVER_KEYS.access, SERVER_KEYS.refresh, SERVER_KEYS.expiry, SERVER_KEYS.account]
+    [SERVER_KEYS.access, SERVER_KEYS.refresh, SERVER_KEYS.expiry, SERVER_KEYS.account, SERVER_KEYS.user]
         .forEach(serverStorageRemove);
 }
 
@@ -121,38 +121,56 @@ function serverAccessTokenValid() {
     return !!serverSession.accessToken && Date.now() < serverSession.expiresAt - 30000;
 }
 
-// 取得可用 access token；force=true 时强制刷新（401 重试用）
-async function serviceEnsureAccessToken(force) {
+// 并发刷新合并：多个请求同时过期或同时撞 401 时复用同一条 refresh 请求，
+// 避免拿同一个旧 refresh_token 并发打向服务端导致轮转冲突误登出。
+let serverRefreshPromise = null;
+
+// 取得可用 access token；force=true 时强制刷新（401 重试用）。
+// failedToken 为触发 401 的旧令牌：若此时已有其他请求刷新出新令牌，直接复用。
+async function serviceEnsureAccessToken(force, failedToken) {
     if (!force && serverAccessTokenValid()) return serverSession.accessToken;
+    if (force && failedToken && serverSession.accessToken
+        && serverSession.accessToken !== failedToken && serverAccessTokenValid()) {
+        return serverSession.accessToken;
+    }
+    if (serverRefreshPromise) return serverRefreshPromise;
 
     const refresh = serverStorageGet(SERVER_KEYS.refresh);
     const base = serverBaseUrl();
     if (!refresh || !base) return '';
 
-    let resp;
+    serverRefreshPromise = (async function () {
+        let resp;
+        try {
+            resp = await fetch(base + '/api/v1/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Request-ID': serverRequestID() },
+                body: JSON.stringify({ refresh_token: refresh })
+            });
+        } catch (_) {
+            return '';
+        }
+        if (!resp.ok) {
+            // 刷新令牌失效（被下线/过期）：清掉本地会话并通知 UI 切回未登录态
+            clearServerSession();
+            notifySessionInvalidated();
+            return '';
+        }
+        const data = await resp.json().catch(() => null);
+        if (!data || !data.access_token) {
+            clearServerSession();
+            notifySessionInvalidated();
+            return '';
+        }
+        applyTokenResponse(data);
+        return data.access_token;
+    })();
+
     try {
-        resp = await fetch(base + '/api/v1/auth/refresh', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Request-ID': serverRequestID() },
-            body: JSON.stringify({ refresh_token: refresh })
-        });
-    } catch (_) {
-        return '';
+        return await serverRefreshPromise;
+    } finally {
+        serverRefreshPromise = null;
     }
-    if (!resp.ok) {
-        // 刷新令牌失效（被下线/过期）：清掉本地会话并通知 UI 切回未登录态
-        clearServerSession();
-        notifySessionInvalidated();
-        return '';
-    }
-    const data = await resp.json().catch(() => null);
-    if (!data || !data.access_token) {
-        clearServerSession();
-        notifySessionInvalidated();
-        return '';
-    }
-    applyTokenResponse(data);
-    return data.access_token;
 }
 
 // ---- 通用请求：带令牌、401 自动刷新重试一次 ----
@@ -176,7 +194,7 @@ async function serviceRequest(path, options) {
     }
 
     if (resp.status === 401) {
-        const fresh = await serviceEnsureAccessToken(true);
+        const fresh = await serviceEnsureAccessToken(true, token);
         if (fresh) {
             headers['Authorization'] = 'Bearer ' + fresh;
             try {

@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof setOnSessionInvalidated === 'function') {
         setOnSessionInvalidated(function () {
             renderServerAuthState();
-            if (typeof showToast === 'function') showToast('登录已失效，请重新登录');
+            if (typeof showToast === 'function') showToast('登录已失效，请重新登录', 4000);
         });
     }
 
@@ -101,6 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof isServerLoggedIn === 'function' && isServerLoggedIn()) {
         serviceEnsureAccessToken(false).then(function() {
             renderServerAuthState();
+            if (!isServerLoggedIn()) return;
             refreshServerModels();
             // 缓存的用户对象可能是老数据（没有抽奖次数字段），恢复会话时拉一次完整账号信息
             refreshServerAccount();
@@ -1796,9 +1797,14 @@ function showAlert(message) {
 }
 
 // 显示toast
-function showToast(message) {
+let toastHideTimer = null;
+
+function showToast(message, duration) {
+    const toastEl = document.getElementById('copyToast');
     const toastBody = document.getElementById('toastBody');
-    const toast = new bootstrap.Toast(document.getElementById('copyToast'));
+    if (!toastEl || !toastBody) return;
+    const ms = typeof duration === 'number' && duration > 0 ? duration : 1000;
+    const toast = bootstrap.Toast.getOrCreateInstance(toastEl, { autohide: false });
 
     // 设置toast内容
     toastBody.textContent = message;
@@ -1806,10 +1812,12 @@ function showToast(message) {
     // 显示toast
     toast.show();
 
-    // 设置自动关闭时间（1秒后关闭）
-    setTimeout(() => {
+    // 设置自动关闭时间（默认 1 秒，重要提示可传入更长时长）
+    if (toastHideTimer) clearTimeout(toastHideTimer);
+    toastHideTimer = setTimeout(() => {
+        toastHideTimer = null;
         toast.hide();
-    }, 1000);
+    }, ms);
 }
 
 // 显示加载动画
